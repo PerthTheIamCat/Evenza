@@ -10,6 +10,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { LinearGradient } from "expo-linear-gradient";
 
+import { useRouter } from "expo-router";
+
 import { SquareActionButton } from "@/components/CustomButton";
 import { CustomInput } from "@/components/CustomInput";
 import { LogoSmallWhiteOutline } from "@/components/Logos/Logos";
@@ -24,6 +26,7 @@ const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function Verification() {
   const colorScheme = useColorScheme();
+  const router = useRouter();
   const [stage, setStage] = useState<VerificationStage>("email");
   const [email, setEmail] = useState<string>("");
   const [otp, setOtp] = useState<string>("");
@@ -81,7 +84,7 @@ export default function Verification() {
         return;
       }
       setError(null);
-      // Placeholder success path
+      router.replace("/home");
     }, 900);
   };
 
@@ -101,7 +104,11 @@ export default function Verification() {
   const otpStatus = error ? ("error" as const) : ("default" as const);
 
   return (
-    <LinearGradient colors={gradient} style={styles.gradient} locations={[0, 0.45, 1]}>
+    <LinearGradient
+      colors={gradient}
+      style={styles.gradient}
+      locations={[0, 0.45, 1]}
+    >
       <SafeAreaView style={styles.safeArea}>
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -167,7 +174,11 @@ export default function Verification() {
           </View>
 
           <View style={styles.footer}>
-            <TouchableOpacity onPress={() => {}}>
+            <TouchableOpacity
+              onPress={() => {
+                router.replace("/(tabs)/home");
+              }}
+            >
               <Text style={styles.link}>Skip</Text>
             </TouchableOpacity>
             <SquareActionButton

@@ -1,38 +1,36 @@
-import FontAwesome from "@expo/vector-icons/FontAwesome";
-import { Tabs } from "expo-router";
-import React from "react";
+import Ionicons from "@expo/vector-icons/Ionicons";
+import {
+  NativeTabs,
+  Icon as NativeTabIcon,
+  Label,
+  Badge,
+  VectorIcon,
+} from "expo-router/unstable-native-tabs";
 
-import { useClientOnlyValue } from "@/components/useClientOnlyValue";
-import { useColorScheme } from "@/components/useColorScheme";
-import Colors from "@/constants/Colors";
-
-// You can explore the built-in icon families and icons on the web at https://icons.expo.fyi/
-function TabBarIcon(props: {
-  name: React.ComponentProps<typeof FontAwesome>["name"];
-  color: string;
-}) {
-  return <FontAwesome size={28} style={{ marginBottom: -3 }} {...props} />;
-}
+import { events } from "@/constants/events";
 
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
+  const attendingCount = events.slice(0, 3).length;
 
   return (
-    <Tabs
-      screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? "light"].tint,
-        // Disable the static render of the header on web
-        // to prevent a hydration error in React Navigation v6.
-        headerShown: useClientOnlyValue(false, true),
-      }}
-    >
-      <Tabs.Screen
-        name="two"
-        options={{
-          title: "Tab Two",
-          tabBarIcon: ({ color }) => <TabBarIcon name="code" color={color} />,
-        }}
-      />
-    </Tabs>
+    <NativeTabs>
+      <NativeTabs.Trigger name="home">
+        <NativeTabIcon src={<VectorIcon family={Ionicons} name="home-outline" />} />
+        <Label>Home</Label>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="my-events">
+        <NativeTabIcon src={<VectorIcon family={Ionicons} name="calendar-outline" />} />
+        <Label>My Events</Label>
+        <Badge>{String(attendingCount)}</Badge>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="create">
+        <NativeTabIcon src={<VectorIcon family={Ionicons} name="add-circle-outline" />} />
+        <Label>Create</Label>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="settings">
+        <NativeTabIcon src={<VectorIcon family={Ionicons} name="settings-outline" />} />
+        <Label>Settings</Label>
+      </NativeTabs.Trigger>
+    </NativeTabs>
   );
 }
