@@ -5,14 +5,16 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useColorScheme } from "@/components/useColorScheme";
 import { LinearGradient } from "expo-linear-gradient";
+import { useRouter } from "expo-router";
 
 import { SignInButton } from "@/components/CustomButton";
 import { LogoSmallWhiteOutline } from "@/components/Logos/Logos";
 
 import Ionicons from "@expo/vector-icons/Ionicons";
 
-export default function TabOneScreen() {
+export default function Index() {
   const colorScheme = useColorScheme();
+  const router = useRouter();
   return (
     <View style={{ flex: 1 }}>
       <LinearGradient
@@ -68,7 +70,12 @@ export default function TabOneScreen() {
               Start creating your special memories with Evenza today.
             </Text>
           </View>
-          <SignInButton label="Get Started" onPress={() => {}} />
+          <SignInButton
+            label="Get Started"
+            onPress={() => {
+              router.push("/signIn");
+            }}
+          />
         </SafeAreaView>
       </LinearGradient>
     </View>
