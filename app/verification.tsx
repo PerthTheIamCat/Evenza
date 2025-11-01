@@ -5,6 +5,8 @@ import {
   StyleSheet,
   TouchableOpacity,
   View,
+  Keyboard,
+  TouchableWithoutFeedback,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -110,16 +112,17 @@ export default function Verification() {
       locations={[0, 0.45, 1]}
     >
       <SafeAreaView style={styles.safeArea}>
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
-          style={styles.keyboardContainer}
-        >
-          <View style={styles.header}>
-            <LogoSmallWhiteOutline />
-            <Text style={styles.brand}>Evenza</Text>
-          </View>
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
+            style={styles.keyboardContainer}
+          >
+            <View style={styles.header}>
+              <LogoSmallWhiteOutline />
+              <Text style={styles.brand}>Evenza</Text>
+            </View>
 
-          <View style={styles.body}>
+            <View style={styles.body}>
             <Text style={styles.title}>Verification</Text>
             <Text style={styles.subtitle}>Verify email for notifications</Text>
 
@@ -171,23 +174,24 @@ export default function Verification() {
                 {error && <Text style={styles.errorText}>{error}</Text>}
               </>
             )}
-          </View>
+            </View>
 
-          <View style={styles.footer}>
-            <TouchableOpacity
-              onPress={() => {
-                router.replace("/(tabs)/home");
-              }}
-            >
-              <Text style={styles.link}>Skip</Text>
-            </TouchableOpacity>
-            <SquareActionButton
-              onPress={handleContinue}
-              state={buttonState}
-              accessibilityLabel="Continue verification"
-            />
-          </View>
-        </KeyboardAvoidingView>
+            <View style={styles.footer}>
+              <TouchableOpacity
+                onPress={() => {
+                  router.replace("/(tabs)/home");
+                }}
+              >
+                <Text style={styles.link}>Skip</Text>
+              </TouchableOpacity>
+              <SquareActionButton
+                onPress={handleContinue}
+                state={buttonState}
+                accessibilityLabel="Continue verification"
+              />
+            </View>
+          </KeyboardAvoidingView>
+        </TouchableWithoutFeedback>
       </SafeAreaView>
     </LinearGradient>
   );
