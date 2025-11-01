@@ -1,15 +1,9 @@
 import { useMemo } from "react";
-import {
-  Image,
-  ScrollView,
-  StyleSheet,
-  View,
-  Pressable,
-} from "react-native";
+import { Image, Pressable, ScrollView, StyleSheet, View } from "react-native";
 
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import Ionicons from "@expo/vector-icons/Ionicons";
 
 import { SquareActionButton } from "@/components/CustomButton";
 import { Text } from "@/components/Themed";
@@ -33,7 +27,11 @@ export default function EventDetailScreen() {
       : (["#11235E", "#1F3A8A", "#4B0B6F"] as const);
 
   return (
-    <LinearGradient colors={gradient} style={styles.gradient} locations={[0, 0.4, 1]}>
+    <LinearGradient
+      colors={gradient}
+      style={styles.gradient}
+      locations={[0, 0.4, 1]}
+    >
       <ScrollView
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
@@ -91,9 +89,9 @@ export default function EventDetailScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>What to expect</Text>
           <Text style={styles.description}>
-            Expect curated atmospheres, interactive installations, and surprise guest
-            performers. We recommend arriving early to explore the pop-up lounges and art
-            corners before the main show begins.
+            Expect curated atmospheres, interactive installations, and surprise
+            guest performers. We recommend arriving early to explore the pop-up
+            lounges and art corners before the main show begins.
           </Text>
         </View>
       </ScrollView>
@@ -121,7 +119,7 @@ const styles = StyleSheet.create({
   content: {
     paddingHorizontal: 24,
     paddingTop: 48,
-    paddingBottom: 140,
+    paddingBottom: 200,
     gap: 28,
   },
   headerRow: {
@@ -207,7 +205,7 @@ const styles = StyleSheet.create({
   },
   footer: {
     position: "absolute",
-    bottom: 24,
+    bottom: 100,
     left: 24,
     right: 24,
     height: 88,
