@@ -11,43 +11,73 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 
+import {
+  createUserWithEmailAndPassword,
+  fetchSignInMethodsForEmail,
+  sendPasswordResetEmail,
+  signInWithEmailAndPassword,
+} from "firebase/auth";
+import { FirebaseError } from "firebase/app";
+
 import { SquareActionButton } from "@/components/CustomButton";
 import { CustomInput } from "@/components/CustomInput";
 import { LogoSmallWhiteOutline } from "@/components/Logos/Logos";
-
 import { Text } from "@/components/Themed";
 import { useColorScheme } from "@/components/useColorScheme";
+import { auth } from "@/lib/firebase";
 
-type AuthStage = "username" | "createPassword" | "existingPassword";
+type AuthStage = "email" | "createPassword" | "existingPassword";
 
-type UserStore = Record<string, { password: string }>;
+const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-const initialUsers: UserStore = {
-  sunny: { password: "sunny123" },
-  luna: { password: "moonlight" },
+const getAuthErrorMessage = (error: unknown) => {
+  if (error instanceof FirebaseError) {
+    switch (error.code) {
+      case "auth/invalid-email":
+        return "Invalid email address";
+      case "auth/user-disabled":
+        return "This account has been disabled";
+      case "auth/email-already-in-use":
+        return "Email already registered";
+      case "auth/weak-password":
+        return "Password should be at least 6 characters";
+      case "auth/invalid-credential":
+      case "auth/wrong-password":
+        return "Incorrect password";
+      case "auth/user-not-found":
+        return "Account not found";
+      case "auth/too-many-requests":
+        return "Too many attempts, please try again later";
+      case "auth/network-request-failed":
+        return "Network error, please check your connection";
+      default:
+        return "Authentication failed, please try again";
+    }
+  }
+  return "Unexpected error, please try again";
 };
 
 export default function SignIn() {
   const colorScheme = useColorScheme();
   const router = useRouter();
-  const [users, setUsers] = useState<UserStore>(initialUsers);
-  const [stage, setStage] = useState<AuthStage>("username");
-  const [username, setUsername] = useState<string>("");
+  const [stage, setStage] = useState<AuthStage>("email");
+  const [email, setEmail] = useState<string>("");
   const [password, setPassword] = useState<string>("");
   const [confirmPassword, setConfirmPassword] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
 
-  const trimmedUsername = username.trim();
-  const lowerUsername = trimmedUsername.toLowerCase();
-  const activeUser = users[lowerUsername];
+  const trimmedEmail = email.trim();
+  const normalizedEmail = trimmedEmail.toLowerCase();
+  const isEmailValid = emailRegex.test(trimmedEmail);
 
   const buttonState = useMemo(() => {
     if (loading) {
       return "loading" as const;
     }
-    if (stage === "username") {
-      return trimmedUsername.length > 0 ? ("active" as const) : ("disabled" as const);
+    if (stage === "email") {
+      return trimmedEmail.length > 0 ? ("active" as const) : ("disabled" as const);
     }
     if (stage === "createPassword") {
       return password.length > 0 && confirmPassword.length > 0
@@ -55,7 +85,7 @@ export default function SignIn() {
         : ("disabled" as const);
     }
     return password.length > 0 ? ("active" as const) : ("disabled" as const);
-  }, [loading, stage, trimmedUsername.length, password.length, confirmPassword.length]);
+  }, [loading, stage, trimmedEmail.length, password.length, confirmPassword.length]);
 
   const resetPasswordFields = () => {
     setPassword("");
@@ -66,66 +96,113 @@ export default function SignIn() {
     setStage(nextStage);
     resetPasswordFields();
     setError(null);
+    setMessage(null);
   };
 
-  const handlePrimaryAction = () => {
-    if (loading) {
+  const handleIdentifyAccount = async () => {
+    if (!trimmedEmail) {
       return;
     }
-    if (stage === "username") {
-      if (!trimmedUsername) {
-        return;
-      }
-      setLoading(true);
-      setError(null);
-      setTimeout(() => {
-        setLoading(false);
-        if (users[lowerUsername]) {
-          moveToPasswordStage("existingPassword");
-        } else {
-          moveToPasswordStage("createPassword");
-        }
-      }, 700);
+    if (!isEmailValid) {
+      setError("Please enter a valid email");
       return;
     }
-
-    if (stage === "createPassword") {
-      if (!password || !confirmPassword) {
-        return;
-      }
-      if (password !== confirmPassword) {
-        setError("Password Not Match");
-        return;
-      }
-      setLoading(true);
-      setError(null);
-      setTimeout(() => {
-        setUsers((prev) => ({
-          ...prev,
-          [lowerUsername]: { password },
-        }));
-        setLoading(false);
+    setLoading(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const methods = await fetchSignInMethodsForEmail(auth, normalizedEmail);
+      if (methods.length === 0) {
+        moveToPasswordStage("createPassword");
+      } else {
         moveToPasswordStage("existingPassword");
-        router.push("/verification");
-      }, 900);
+      }
+    } catch (err) {
+      setError(getAuthErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCreateAccount = async () => {
+    if (!password || !confirmPassword) {
       return;
     }
+    if (password !== confirmPassword) {
+      setError("Password Not Match");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    setMessage(null);
+    try {
+      await createUserWithEmailAndPassword(auth, normalizedEmail, password);
+      moveToPasswordStage("existingPassword");
+      router.push("/verification");
+    } catch (err) {
+      setError(getAuthErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  };
 
+  const handleExistingSignIn = async () => {
     if (!password) {
       return;
     }
-
     setLoading(true);
     setError(null);
-    setTimeout(() => {
+    setMessage(null);
+    try {
+      await signInWithEmailAndPassword(auth, normalizedEmail, password);
+      router.replace("/(tabs)/home");
+    } catch (err) {
+      setError(getAuthErrorMessage(err));
+    } finally {
       setLoading(false);
-      if (!activeUser || activeUser.password !== password) {
-        setError("Username or password incorrect");
-        return;
-      }
-      setError(null);
-      // Placeholder for navigation on successful sign-in.
-    }, 900);
+    }
+  };
+
+  const handlePrimaryAction = async () => {
+    if (loading) {
+      return;
+    }
+    if (stage === "email") {
+      await handleIdentifyAccount();
+      return;
+    }
+    if (stage === "createPassword") {
+      await handleCreateAccount();
+      return;
+    }
+    await handleExistingSignIn();
+  };
+
+  const handleForgotPassword = async () => {
+    if (loading) {
+      return;
+    }
+    if (!trimmedEmail) {
+      setError("Enter your email first");
+      setStage("email");
+      return;
+    }
+    if (!isEmailValid) {
+      setError("Please enter a valid email");
+      setStage("email");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    setMessage(null);
+    try {
+      await sendPasswordResetEmail(auth, normalizedEmail);
+      setMessage("Password reset email sent");
+    } catch (err) {
+      setError(getAuthErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
   };
 
   const isCreateStage = stage === "createPassword";
@@ -133,14 +210,10 @@ export default function SignIn() {
   const showForgotPassword = isLoginStage;
   const isPasswordMismatch = error === "Password Not Match";
 
-  const usernameStatus =
-    error && isLoginStage && !isPasswordMismatch
-      ? ("error" as const)
-      : ("default" as const);
+  const emailStatus =
+    error && stage === "email" ? ("error" as const) : ("default" as const);
   const passwordStatus =
-    error && (isLoginStage || isPasswordMismatch)
-      ? ("error" as const)
-      : ("default" as const);
+    error && stage !== "email" ? ("error" as const) : ("default" as const);
 
   const gradient =
     colorScheme === "dark"
@@ -173,32 +246,38 @@ export default function SignIn() {
               <Text style={styles.subTitle}>Welcome Back</Text>
             )}
             <CustomInput
-              placeholder="Username"
-              value={username}
+              placeholder="Email"
+              value={email}
               onChangeText={(text) => {
-                setUsername(text);
-                if (stage !== "username") {
-                  setStage("username");
+                setEmail(text);
+                if (stage !== "email") {
+                  setStage("email");
                   resetPasswordFields();
-                  setError(null);
                 }
+                setError(null);
+                setMessage(null);
               }}
-              status={usernameStatus}
+              status={emailStatus}
               containerStyle={styles.inputSpacing}
-              iconName="person-outline"
-              textContentType="username"
+              iconName="mail-outline"
+              keyboardType="email-address"
+              textContentType="emailAddress"
+              autoCapitalize="none"
             />
 
-            {stage !== "username" && (
+            {stage !== "email" && (
               <>
                 <CustomInput
-                  placeholder={isCreateStage ? "Password" : "Password"}
+                  placeholder="Password"
                   secureTextEntry
                   value={password}
                   onChangeText={(text) => {
                     setPassword(text);
                     if (error) {
                       setError(null);
+                    }
+                    if (message) {
+                      setMessage(null);
                     }
                   }}
                   status={passwordStatus}
@@ -216,6 +295,9 @@ export default function SignIn() {
                       if (error) {
                         setError(null);
                       }
+                      if (message) {
+                        setMessage(null);
+                      }
                     }}
                     status={passwordStatus}
                     containerStyle={styles.inputSpacing}
@@ -224,6 +306,7 @@ export default function SignIn() {
                   />
                 )}
                 {error && <Text style={styles.errorText}>{error}</Text>}
+                {message && <Text style={styles.infoText}>{message}</Text>}
                 {isCreateStage ? (
                   <TouchableOpacity
                     onPress={() => {
@@ -235,7 +318,7 @@ export default function SignIn() {
                 ) : (
                   <>
                     {showForgotPassword && (
-                      <TouchableOpacity onPress={() => {}}>
+                      <TouchableOpacity onPress={handleForgotPassword}>
                         <Text style={styles.link}>Forgot Password</Text>
                       </TouchableOpacity>
                     )}
@@ -312,6 +395,11 @@ const styles = StyleSheet.create({
   errorText: {
     marginTop: 12,
     color: "#FF3B30",
+    fontSize: 16,
+  },
+  infoText: {
+    marginTop: 12,
+    color: "#4CD964",
     fontSize: 16,
   },
   link: {
