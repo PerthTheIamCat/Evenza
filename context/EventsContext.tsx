@@ -50,6 +50,8 @@ const staticEventList = staticEvents.map((event) => ({
   source: "static" as const,
 }));
 
+const EVENTS_COLLECTION = "events";
+
 const formatDateLabel = (date: Date) =>
   date.toLocaleDateString("en-US", {
     weekday: "long",
@@ -158,10 +160,8 @@ export function EventsProvider({ children }: { children: ReactNode }) {
   const fetchEvents = useCallback(async () => {
     setLoading(true);
     try {
-      const eventsQuery = query(
-        collection(db, "events"),
-        orderBy("createdAt", "desc"),
-      );
+      const eventsCollection = collection(db, EVENTS_COLLECTION);
+      const eventsQuery = query(eventsCollection, orderBy("createdAt", "desc"));
       const snapshot = await getDocs(eventsQuery);
       const mapped = snapshot.docs.map(mapDocToEvent);
       setRemoteEvents(mapped);
@@ -178,11 +178,22 @@ export function EventsProvider({ children }: { children: ReactNode }) {
 
   const createEvent = useCallback(
     async (input: CreateEventInput) => {
-      const user = auth.currentUser;
-      if (!user) {
+      const currentUser = auth.currentUser;
+      if (!currentUser) {
         throw new Error("Please sign in before publishing an event.");
       }
-      if (!user.emailVerified) {
+
+      let activeUser = currentUser;
+      try {
+        await currentUser.reload();
+        if (auth.currentUser) {
+          activeUser = auth.currentUser;
+        }
+      } catch (error) {
+        console.warn("Failed to refresh auth state before creating event", error);
+      }
+
+      if (!activeUser.emailVerified) {
         throw new Error("Please verify your email before publishing an event.");
       }
 
@@ -199,7 +210,8 @@ export function EventsProvider({ children }: { children: ReactNode }) {
         input.locationType === "Onsite" ? "On site" : "Online event";
 
       try {
-        const docRef = await addDoc(collection(db, "events"), {
+        const eventsCollection = collection(db, EVENTS_COLLECTION);
+        const docRef = await addDoc(eventsCollection, {
           title: input.title,
           description: input.description,
           headline,
@@ -212,7 +224,7 @@ export function EventsProvider({ children }: { children: ReactNode }) {
           startDateTime: startDate.toISOString(),
           endDateTime: endDate.toISOString(),
           createdAt: serverTimestamp(),
-          createdBy: user.uid,
+          createdBy: activeUser.uid,
         });
 
         const newEvent: EventItem = {

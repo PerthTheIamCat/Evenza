@@ -1,10 +1,15 @@
-import { ScrollView, StyleSheet, Switch, View } from "react-native";
+import { ScrollView, StyleSheet, Switch, TouchableOpacity, View } from "react-native";
 import { useState } from "react";
 
 import { LinearGradient } from "expo-linear-gradient";
 
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { signOut } from "firebase/auth";
+import { useRouter } from "expo-router";
+
 import { Text } from "@/components/Themed";
 import { useColorScheme } from "@/components/useColorScheme";
+import { auth } from "@/lib/firebase";
 
 const settingItems = [
   { key: "notifyEvents", label: "Event reminders" },
@@ -14,11 +19,13 @@ const settingItems = [
 
 export default function SettingsScreen() {
   const colorScheme = useColorScheme();
+  const router = useRouter();
   const [toggles, setToggles] = useState<Record<string, boolean>>({
     notifyEvents: true,
     notifyUpdates: false,
     notifyOffers: true,
   });
+  const [signingOut, setSigningOut] = useState(false);
 
   const gradient =
     colorScheme === "dark"
@@ -67,6 +74,28 @@ export default function SettingsScreen() {
             Review how we collect and secure your information.
           </Text>
         </View>
+
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={async () => {
+            if (signingOut) {
+              return;
+            }
+            setSigningOut(true);
+            try {
+              await AsyncStorage.removeItem("userEmail");
+              await signOut(auth);
+              router.replace("/signIn");
+            } catch (error) {
+              console.warn("Failed to sign out", error);
+            } finally {
+              setSigningOut(false);
+            }
+          }}
+          style={styles.signOutButton}
+        >
+          <Text style={styles.signOutLabel}>{signingOut ? "Signing out..." : "Sign out"}</Text>
+        </TouchableOpacity>
       </ScrollView>
     </LinearGradient>
   );
@@ -117,5 +146,19 @@ const styles = StyleSheet.create({
     color: "rgba(255,255,255,0.65)",
     fontSize: 14,
     marginTop: 4,
+  },
+  signOutButton: {
+    marginTop: 12,
+    paddingVertical: 16,
+    borderRadius: 18,
+    backgroundColor: "rgba(255, 82, 82, 0.18)",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255,82,82,0.45)",
+  },
+  signOutLabel: {
+    color: "#FF5252",
+    fontSize: 16,
+    fontWeight: "600",
   },
 });

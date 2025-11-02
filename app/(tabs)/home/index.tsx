@@ -16,7 +16,6 @@ import { EventCard } from "@/components/EventCard";
 import { Text } from "@/components/Themed";
 import { useColorScheme } from "@/components/useColorScheme";
 import { useEvents } from "@/context/EventsContext";
-import { useJoinedEvents } from "@/context/JoinedEventsContext";
 
 const { width } = Dimensions.get("window");
 
@@ -24,7 +23,6 @@ export default function HomeScreen() {
   const colorScheme = useColorScheme();
   const router = useRouter();
   const { events } = useEvents();
-  const { joinEvent, isJoined } = useJoinedEvents();
 
   const gradient =
     colorScheme === "dark"
@@ -138,41 +136,15 @@ export default function HomeScreen() {
         </View>
 
         <View style={styles.upcomingList}>
-          {upcomingEvents.map((event) => {
-            const alreadyJoined = isJoined(event.id);
-            return (
-              <View key={event.id} style={styles.upcomingItem}>
-                <EventCard
-                  item={event}
-                  variant="default"
-                  onPress={(item) => router.push(`/home/event/${item.id}`)}
-                />
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={
-                    alreadyJoined
-                      ? "Event already in My Events"
-                      : "Join this event"
-                  }
-                  onPress={() => {
-                    if (!alreadyJoined) {
-                      joinEvent(event);
-                    }
-                  }}
-                  disabled={alreadyJoined}
-                  style={({ pressed }) => [
-                    styles.joiningButton,
-                    alreadyJoined && styles.joiningButtonDisabled,
-                    pressed && !alreadyJoined ? styles.joiningButtonPressed : null,
-                  ]}
-                >
-                  <Text style={styles.joiningButtonText}>
-                    {alreadyJoined ? "Added to My Events" : "Joining"}
-                  </Text>
-                </Pressable>
-              </View>
-            );
-          })}
+          {upcomingEvents.map((event) => (
+            <View key={event.id} style={styles.upcomingItem}>
+              <EventCard
+                item={event}
+                variant="default"
+                onPress={(item) => router.push(`/home/event/${item.id}`)}
+              />
+            </View>
+          ))}
         </View>
       </ScrollView>
     </LinearGradient>
@@ -271,23 +243,5 @@ const styles = StyleSheet.create({
   },
   upcomingItem: {
     gap: 12,
-  },
-  joiningButton: {
-    height: 48,
-    borderRadius: 18,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(124, 44, 220, 0.4)",
-  },
-  joiningButtonDisabled: {
-    backgroundColor: "rgba(255,255,255,0.18)",
-  },
-  joiningButtonPressed: {
-    transform: [{ scale: 0.97 }],
-  },
-  joiningButtonText: {
-    color: "#FFFFFF",
-    fontSize: 16,
-    fontWeight: "600",
   },
 });
