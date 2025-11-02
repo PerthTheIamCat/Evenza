@@ -2,18 +2,17 @@ import { useCallback, useMemo, useState } from "react";
 import {
   Dimensions,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   TextInput,
   View,
-  RefreshControl,
 } from "react-native";
 
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 
-import { SquareActionButton } from "@/components/CustomButton";
 import { EventCard } from "@/components/EventCard";
 import { Text } from "@/components/Themed";
 import { useColorScheme } from "@/components/useColorScheme";
@@ -37,6 +36,27 @@ const getEventTimestamp = (event: EventItem): number => {
   return Number.MAX_SAFE_INTEGER;
 };
 
+const getCreatedTimestamp = (event: EventItem): number => {
+  if (event.createdAt) {
+    const created = Date.parse(event.createdAt);
+    if (!Number.isNaN(created)) {
+      return created;
+    }
+  }
+  return Number.MIN_SAFE_INTEGER;
+};
+
+const isTimestampKnown = (timestamp: number) =>
+  Number.isFinite(timestamp) && timestamp !== Number.MAX_SAFE_INTEGER;
+
+const isEventUpcoming = (event: EventItem, reference: number) => {
+  const timestamp = getEventTimestamp(event);
+  if (!isTimestampKnown(timestamp)) {
+    return true;
+  }
+  return timestamp >= reference;
+};
+
 export default function HomeScreen() {
   const colorScheme = useColorScheme();
   const router = useRouter();
@@ -51,12 +71,14 @@ export default function HomeScreen() {
       : (["#162E7A", "#2343A0", "#4A0A7D"] as const);
 
   const normalizedQuery = searchQuery.trim().toLowerCase();
+  const now = Date.now();
 
   const searchResults = useMemo(() => {
     if (!normalizedQuery) {
       return [];
     }
     return events
+      .filter((event) => isEventUpcoming(event, now))
       .filter((event) => {
         const title = event.title?.toLowerCase() ?? "";
         const createdBy = event.createdBy?.toLowerCase() ?? "";
@@ -65,44 +87,52 @@ export default function HomeScreen() {
         );
       })
       .sort((a, b) => getEventTimestamp(a) - getEventTimestamp(b));
-  }, [events, normalizedQuery]);
+  }, [events, normalizedQuery, now]);
 
-  const featuredEvent = useMemo(() => {
+  const featuredEvents = useMemo(() => {
     if (events.length === 0) {
-      return undefined;
+      return [];
     }
-    return events.find((event) => event.isFeatured) ?? events[0];
-  }, [events]);
+    return [...events]
+      .filter((event) => isEventUpcoming(event, now))
+      .slice(0, 3);
+  }, [events, now]);
+
+  const featuredEventIds = useMemo(() => {
+    return new Set(featuredEvents.map((event) => event.id));
+  }, [featuredEvents]);
 
   const popularEvents = useMemo(() => {
     return events.filter(
-      (event) => event.isPopular && event.id !== featuredEvent?.id
+      (event) =>
+        event.isPopular &&
+        !featuredEventIds.has(event.id) &&
+        isEventUpcoming(event, now)
     );
-  }, [events, featuredEvent]);
+  }, [events, featuredEventIds, now]);
 
   const userEmail = user?.email ?? "";
   const profileInitial = userEmail.trim().charAt(0).toUpperCase() || "E";
   const headline = userEmail || "Discover new experiences";
 
   const upcomingEvents = useMemo(() => {
-    const filtered = events.filter((event) => {
-      if (featuredEvent && event.id === featuredEvent.id) {
-        return false;
-      }
-      return !event.isFeatured;
-    });
-    const now = Date.now();
-    return filtered
-      .map((event) => ({
-        event,
-        timestamp: getEventTimestamp(event),
-      }))
+    return events
+      .filter((event) => isEventUpcoming(event, now))
+      .map((event) => {
+        const timestamp = getEventTimestamp(event);
+        return {
+          event,
+          timestamp,
+          hasTimestamp:
+            Number.isFinite(timestamp) && timestamp !== Number.MAX_SAFE_INTEGER,
+        };
+      })
       .sort((a, b) => {
         const deltaA = a.timestamp - now;
         const deltaB = b.timestamp - now;
 
-        const isFutureA = deltaA >= 0 && Number.isFinite(deltaA);
-        const isFutureB = deltaB >= 0 && Number.isFinite(deltaB);
+        const isFutureA = a.hasTimestamp && deltaA >= 0;
+        const isFutureB = b.hasTimestamp && deltaB >= 0;
 
         if (isFutureA && isFutureB) {
           return deltaA - deltaB;
@@ -113,10 +143,20 @@ export default function HomeScreen() {
         if (isFutureB) {
           return 1;
         }
-        return deltaB - deltaA;
+
+        if (a.hasTimestamp && b.hasTimestamp) {
+          return deltaB - deltaA;
+        }
+        if (a.hasTimestamp) {
+          return -1;
+        }
+        if (b.hasTimestamp) {
+          return 1;
+        }
+        return a.event.title.localeCompare(b.event.title);
       })
       .map((item) => item.event);
-  }, [events, featuredEvent]);
+  }, [events, now]);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -154,13 +194,6 @@ export default function HomeScreen() {
             <Text style={styles.subtitle}>Welcome back</Text>
             <Text style={styles.title}>{headline}</Text>
           </View>
-          <Pressable
-            style={styles.notificationButton}
-            onPress={() => {}}
-            accessibilityLabel="Notifications"
-          >
-            <Ionicons name="notifications-outline" size={24} color="#FFFFFF" />
-          </Pressable>
         </View>
 
         <View style={styles.searchBar}>
@@ -168,7 +201,7 @@ export default function HomeScreen() {
           <TextInput
             value={searchQuery}
             onChangeText={setSearchQuery}
-            placeholder="Search events or hosts"
+            placeholder="Search events"
             placeholderTextColor="rgba(255,255,255,0.6)"
             style={styles.searchInput}
             returnKeyType="search"
@@ -212,7 +245,7 @@ export default function HomeScreen() {
                       item={event}
                       variant="default"
                       onPress={(item) => router.push(`/home/event/${item.id}`)}
-                      badge={event.isPopular ? "Popular" : undefined}
+                      badge={"Match"}
                     />
                   </View>
                 ))}
@@ -221,52 +254,40 @@ export default function HomeScreen() {
           </View>
         ) : (
           <>
-            {featuredEvent && (
+            {featuredEvents.length > 0 && (
               <View style={styles.section}>
                 <Text style={styles.sectionLabel}>Featured</Text>
-                <EventCard
-                  item={featuredEvent}
-                  variant="featured"
-                  onPress={(item) => router.push(`/home/event/${item.id}`)}
-                  badge="Top pick"
-                />
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  style={styles.featuredScroll}
+                  contentContainerStyle={styles.featuredList}
+                >
+                  {featuredEvents.map((event, index) => {
+                    const isLast = index === featuredEvents.length - 1;
+                    return (
+                      <View
+                        key={event.id}
+                        style={[
+                          styles.featuredItem,
+                          isLast && styles.featuredItemLast,
+                        ]}
+                      >
+                        <EventCard
+                          item={event}
+                          onPress={(item) =>
+                            router.push(`/home/event/${item.id}`)
+                          }
+                          badge="Suggested"
+                        />
+                      </View>
+                    );
+                  })}
+                </ScrollView>
               </View>
             )}
-
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionLabel}>Popular this week</Text>
-              <Pressable onPress={() => {}}>
-                <Text style={styles.actionText}>See all</Text>
-              </Pressable>
-            </View>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.horizontalList}
-              snapToAlignment="center"
-              decelerationRate="fast"
-              snapToInterval={width * 0.75 + 20}
-            >
-              {popularEvents.map((event) => (
-                <View key={event.id} style={styles.horizontalCard}>
-                  <EventCard
-                    item={event}
-                    variant="default"
-                    onPress={(item) => router.push(`/home/event/${item.id}`)}
-                    badge={event.isPopular ? "Popular" : undefined}
-                  />
-                </View>
-              ))}
-            </ScrollView>
-
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionLabel}>Upcoming</Text>
-              <SquareActionButton
-                state="active"
-                iconSize={28}
-                onPress={() => router.push("/create")}
-                accessibilityLabel="Create an event"
-              />
             </View>
 
             <View style={styles.upcomingList}>
@@ -376,6 +397,22 @@ const styles = StyleSheet.create({
   actionText: {
     color: "rgba(255,255,255,0.7)",
     textDecorationLine: "underline",
+  },
+  featuredScroll: {
+    marginHorizontal: -24,
+    paddingHorizontal: 24,
+  },
+  featuredList: {
+    flexDirection: "row",
+    alignItems: "stretch",
+    paddingRight: 12,
+  },
+  featuredItem: {
+    width: width * 0.8,
+    marginRight: 20,
+  },
+  featuredItemLast: {
+    marginRight: 0,
   },
   horizontalList: {
     paddingVertical: 12,

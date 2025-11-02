@@ -10,9 +10,10 @@ import * as SplashScreen from "expo-splash-screen";
 import { useEffect, type ReactNode } from "react";
 import "react-native-reanimated";
 
+import AppSplash from "@/components/AppSplash";
 import { useColorScheme } from "@/components/useColorScheme";
-import { EventsProvider } from "@/context/EventsContext";
 import { AuthTokenProvider, useAuthToken } from "@/context/AuthTokenContext";
+import { EventsProvider } from "@/context/EventsContext";
 import { JoinedEventsProvider } from "@/context/JoinedEventsContext";
 import { NotificationPreferencesProvider } from "@/context/NotificationPreferencesContext";
 
@@ -26,7 +27,7 @@ export const unstable_settings = {
   initialRouteName: "(tabs)",
 };
 
-// Prevent the splash screen from auto-hiding before asset loading is complete.
+// Keep the native splash on until we decide to hide it.
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
@@ -52,16 +53,15 @@ function RootLayoutInner({ fontsLoaded }: { fontsLoaded: boolean }) {
   const { initialized } = useAuthToken();
 
   useEffect(() => {
-    if (fontsLoaded && initialized) {
-      SplashScreen.hideAsync().catch(() => {
-        // no-op: splash might already be hidden
-      });
-    }
+    // As soon as JS is ready, hide the native splash so we can show our custom one.
+    // We'll still gate app navigation until resources are ready.
+    SplashScreen.hideAsync().catch(() => {
+      // no-op: splash might already be hidden
+    });
   }, [fontsLoaded, initialized]);
 
-  if (!fontsLoaded || !initialized) {
-    return null;
-  }
+  // While fonts/auth are not ready, show our custom splash screen
+  if (!fontsLoaded || !initialized) return <AppSplash />;
 
   return <RootLayoutNav />;
 }
@@ -106,9 +106,7 @@ function AuthNavigationGate({ children }: { children: ReactNode }) {
 
     const [rootSegment] = segments;
     const inTabsGroup = rootSegment === "(tabs)";
-    const isAuthScreen =
-      rootSegment === undefined ||
-      rootSegment === "signIn";
+    const isAuthScreen = rootSegment === undefined || rootSegment === "signIn";
     const needsVerification = user != null && user.emailVerified === false;
 
     if (status === "authenticated") {

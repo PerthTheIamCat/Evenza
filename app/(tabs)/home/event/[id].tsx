@@ -10,6 +10,7 @@ import {
 
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { LinearGradient } from "expo-linear-gradient";
+import { GlassView } from "expo-glass-effect";
 import { useLocalSearchParams, useRouter } from "expo-router";
 
 import { Text } from "@/components/Themed";
@@ -48,9 +49,10 @@ export default function EventDetailScreen() {
     !!event.createdBy &&
     !!user?.uid &&
     event.createdBy === user.uid;
+  const canEdit = canDelete;
 
   const handleJoin = useCallback(async () => {
-    if (!event || alreadyJoined) {
+    if (!event || alreadyJoined || canEdit) {
       return;
     }
 
@@ -68,7 +70,14 @@ export default function EventDetailScreen() {
       eventLocation: event.location,
       organizerEmail: event.createdBy,
     });
-  }, [alreadyJoined, event, joinEvent, notifyOnJoin, userEmail]);
+  }, [alreadyJoined, canEdit, event, joinEvent, notifyOnJoin, userEmail]);
+
+  const handleEdit = useCallback(() => {
+    if (!canEdit || !event) {
+      return;
+    }
+    router.push({ pathname: "/create", params: { eventId: event.id } });
+  }, [canEdit, event, router]);
 
   const performDelete = useCallback(async () => {
     if (!event || !user?.uid) {
@@ -170,33 +179,45 @@ export default function EventDetailScreen() {
       >
         <View style={styles.headerRow}>
           <Pressable
-            style={styles.backButton}
+            style={({ pressed }) => [
+              styles.iconButtonPressable,
+              pressed ? styles.iconButtonPressed : null,
+            ]}
             onPress={() => router.back()}
             accessibilityLabel="Go back"
           >
-            <Ionicons name="chevron-back" size={24} color="#FFFFFF" />
+            <GlassView
+              style={styles.iconButtonGlass}
+              tintColor="rgba(255,255,255,0.16)"
+              glassEffectStyle="regular"
+              isInteractive
+            >
+              <Ionicons name="chevron-back" size={24} color="#FFFFFF" />
+            </GlassView>
           </Pressable>
           {canDelete ? (
             <Pressable
-              style={[
-                styles.shareButton,
-                deleting ? styles.disabledAction : null,
+              style={({ pressed }) => [
+                styles.iconButtonPressable,
+                deleting ? styles.iconButtonDisabled : null,
+                pressed && !deleting ? styles.iconButtonPressed : null,
               ]}
               onPress={confirmDelete}
               accessibilityLabel="Delete event"
               accessibilityRole="button"
               disabled={deleting}
             >
-              <Ionicons name="trash-outline" size={22} color="#FFFFFF" />
+              <GlassView
+                style={styles.iconButtonGlass}
+                tintColor="rgba(255,255,255,0.16)"
+                glassEffectStyle="regular"
+                isInteractive={!deleting}
+              >
+                <Ionicons name="trash-outline" size={22} color="#FFFFFF" />
+              </GlassView>
             </Pressable>
           ) : (
-            <Pressable
-              style={styles.shareButton}
-              onPress={() => {}}
-              accessibilityLabel="Share event"
-            >
-              <Ionicons name="share-outline" size={22} color="#FFFFFF" />
-            </Pressable>
+            <View style={styles.iconButtonPlaceholder} />
           )}
         </View>
 
@@ -226,51 +247,53 @@ export default function EventDetailScreen() {
             <Ionicons name="location-outline" size={22} color="#FFFFFF" />
             <Text style={styles.metaText}>{event.location}</Text>
           </View>
-          <View style={styles.metaRow}>
-            <Ionicons name="wifi-outline" size={22} color="#FFFFFF" />
-            <Text style={styles.metaText}>{event.mode}</Text>
-          </View>
         </View>
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>About this event</Text>
           <Text style={styles.description}>{event.description}</Text>
         </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>What to expect</Text>
-          <Text style={styles.description}>
-            Expect curated atmospheres, interactive installations, and surprise
-            guest performers. We recommend arriving early to explore the pop-up
-            lounges and art corners before the main show begins.
-          </Text>
-        </View>
       </ScrollView>
 
       <View style={styles.footer}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={
-            alreadyJoined
-              ? "Event already added to My Events"
-              : "Join this event"
-          }
-          onPress={() => {
-            void handleJoin();
-          }}
-          disabled={alreadyJoined || deleting}
-          style={({ pressed }) => [
-            styles.joinButton,
-            (alreadyJoined || deleting) && styles.joinButtonDisabled,
-            pressed && !alreadyJoined && !deleting
-              ? styles.joinButtonPressed
-              : null,
-          ]}
-        >
-          <Text style={styles.joinButtonText}>
-            {alreadyJoined ? "Added to My Events" : "Joining"}
-          </Text>
-        </Pressable>
+        {canEdit ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Edit this event"
+            onPress={handleEdit}
+            style={({ pressed }) => [
+              styles.joinButton,
+              pressed ? styles.joinButtonPressed : null,
+            ]}
+            disabled={deleting}
+          >
+            <Text style={styles.joinButtonText}>Edit event</Text>
+          </Pressable>
+        ) : (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={
+              alreadyJoined
+                ? "Event already added to My Events"
+                : "Join this event"
+            }
+            onPress={() => {
+              void handleJoin();
+            }}
+            disabled={alreadyJoined || deleting}
+            style={({ pressed }) => [
+              styles.joinButton,
+              (alreadyJoined || deleting) && styles.joinButtonDisabled,
+              pressed && !alreadyJoined && !deleting
+                ? styles.joinButtonPressed
+                : null,
+            ]}
+          >
+            <Text style={styles.joinButtonText}>
+              {alreadyJoined ? "Added to My Events" : "Joining"}
+            </Text>
+          </Pressable>
+        )}
       </View>
     </LinearGradient>
   );
@@ -291,24 +314,28 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
   },
-  backButton: {
+  iconButtonPressable: {
     width: 48,
     height: 48,
     borderRadius: 18,
-    backgroundColor: "rgba(255,255,255,0.16)",
-    justifyContent: "center",
-    alignItems: "center",
+    overflow: "hidden",
   },
-  shareButton: {
-    width: 48,
-    height: 48,
+  iconButtonGlass: {
+    flex: 1,
     borderRadius: 18,
-    backgroundColor: "rgba(255,255,255,0.16)",
     justifyContent: "center",
     alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.16)",
   },
-  disabledAction: {
+  iconButtonPressed: {
+    transform: [{ scale: 0.94 }],
+  },
+  iconButtonDisabled: {
     opacity: 0.45,
+  },
+  iconButtonPlaceholder: {
+    width: 48,
+    height: 48,
   },
   heroCard: {
     borderRadius: 32,

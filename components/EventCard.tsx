@@ -20,6 +20,9 @@ export const EventCard = ({
 }: EventCardProps) => {
   const isFeatured = variant === "featured";
   const borderRadius = isFeatured ? 28 : variant === "compact" ? 20 : 24;
+  const participantsCount = item.participants?.length ?? 0;
+  const participantsLabel =
+    participantsCount === 1 ? "attendee" : "attendees";
 
   const card = (
     <LinearGradient
@@ -52,6 +55,10 @@ export const EventCard = ({
           <Text style={styles.meta}>{item.date}</Text>
           <View style={styles.dot} />
           <Text style={styles.meta}>{item.time}</Text>
+          <View style={styles.dot} />
+          <Text style={styles.meta}>
+            {participantsCount} {participantsLabel}
+          </Text>
         </View>
       </View>
     </LinearGradient>

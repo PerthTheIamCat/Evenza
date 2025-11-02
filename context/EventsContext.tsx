@@ -9,6 +9,7 @@ import {
 } from "react";
 
 import { readAsStringAsync } from "expo-file-system/legacy";
+import { FirebaseError } from "firebase/app";
 import {
   Timestamp,
   addDoc,
@@ -20,13 +21,14 @@ import {
   orderBy,
   query,
   serverTimestamp,
+  updateDoc,
   type DocumentData,
   type QueryDocumentSnapshot,
 } from "firebase/firestore";
-import { FirebaseError } from "firebase/app";
 
 import {
-  events as staticEvents,
+  EVENT_CATEGORIES,
+  type EventCategory,
   type EventItem,
   type EventParticipant,
 } from "@/constants/events";
@@ -41,6 +43,19 @@ export type CreateEventInput = {
   endDateTime: Date;
   locationType: LocationType;
   imageUri: string;
+  category: EventCategory;
+};
+
+export type UpdateEventInput = {
+  eventId: string;
+  title: string;
+  description: string;
+  startDateTime: Date;
+  endDateTime: Date;
+  locationType: LocationType;
+  imageUri: string | null;
+  imageUpdated: boolean;
+  category: EventCategory;
 };
 
 type DeleteEventResult = {
@@ -55,15 +70,14 @@ type EventsContextValue = {
   loading: boolean;
   refresh: () => Promise<void>;
   createEvent: (input: CreateEventInput) => Promise<void>;
-  deleteEvent: (eventId: string, requestorUid: string) => Promise<DeleteEventResult>;
+  updateEvent: (input: UpdateEventInput) => Promise<void>;
+  deleteEvent: (
+    eventId: string,
+    requestorUid: string
+  ) => Promise<DeleteEventResult>;
 };
 
 const EventsContext = createContext<EventsContextValue | undefined>(undefined);
-
-const staticEventList = staticEvents.map((event) => ({
-  ...event,
-  source: "static" as const,
-}));
 
 export const EVENTS_COLLECTION = "events";
 
@@ -143,15 +157,18 @@ const parseParticipants = (value: unknown): EventParticipant[] => {
   });
 };
 
-const mapDocToEvent = (
-  doc: QueryDocumentSnapshot<DocumentData>,
-): EventItem => {
+const mapDocToEvent = (doc: QueryDocumentSnapshot<DocumentData>): EventItem => {
   const data = doc.data();
   const startDate = getDateFromValue(data.startDateTime);
   const endDate = getDateFromValue(data.endDateTime);
 
   const locationType =
     data.locationType === "Onsite" ? "Onsite" : ("Online" as LocationType);
+
+  const categoryValue = data.category;
+  const category = EVENT_CATEGORIES.includes(categoryValue as EventCategory)
+    ? (categoryValue as EventCategory)
+    : "General";
 
   const formattedStartDate = startDate ? formatDateLabel(startDate) : "";
   const formattedStartTime = startDate ? formatTimeLabel(startDate) : "";
@@ -160,7 +177,7 @@ const mapDocToEvent = (
     id: doc.id,
     title: data.title ?? "Untitled event",
     headline: data.headline ?? buildHeadline(data.description ?? ""),
-    category: data.category ?? "General",
+    category,
     createdBy: data.createdBy ?? undefined,
     date: data.date ?? formattedStartDate,
     time: data.time ?? formattedStartTime,
@@ -191,13 +208,10 @@ const uploadImageToImgbb = async (uri: string) => {
   const formData = new FormData();
   formData.append("image", base64);
 
-  const response = await fetch(
-    `https://api.imgbb.com/1/upload?key=${apiKey}`,
-    {
-      method: "POST",
-      body: formData,
-    },
-  );
+  const response = await fetch(`https://api.imgbb.com/1/upload?key=${apiKey}`, {
+    method: "POST",
+    body: formData,
+  });
 
   const json = await response.json();
 
@@ -231,87 +245,185 @@ export function EventsProvider({ children }: { children: ReactNode }) {
     fetchEvents();
   }, [fetchEvents]);
 
-  const createEvent = useCallback(
-    async (input: CreateEventInput) => {
-      const currentUser = auth.currentUser;
-      if (!currentUser) {
-        throw new Error("Please sign in before publishing an event.");
+  const createEvent = useCallback(async (input: CreateEventInput) => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+      throw new Error("Please sign in before publishing an event.");
+    }
+
+    let activeUser = currentUser;
+    try {
+      await currentUser.reload();
+      if (auth.currentUser) {
+        activeUser = auth.currentUser;
       }
+    } catch (error) {
+      console.warn("Failed to refresh auth state before creating event", error);
+    }
 
-      let activeUser = currentUser;
-      try {
-        await currentUser.reload();
-        if (auth.currentUser) {
-          activeUser = auth.currentUser;
-        }
-      } catch (error) {
-        console.warn("Failed to refresh auth state before creating event", error);
+    if (!activeUser.emailVerified) {
+      throw new Error("Please verify your email before publishing an event.");
+    }
+
+    const imageUrl = await uploadImageToImgbb(input.imageUri);
+
+    const startDate = input.startDateTime;
+    const endDate = input.endDateTime;
+
+    const formattedDate = formatDateLabel(startDate);
+    const formattedTime = formatTimeLabel(startDate);
+
+    const headline = buildHeadline(input.description);
+    const locationLabel =
+      input.locationType === "Onsite" ? "On site" : "Online event";
+
+    try {
+      const eventsCollection = collection(db, EVENTS_COLLECTION);
+      const docRef = await addDoc(eventsCollection, {
+        title: input.title,
+        description: input.description,
+        headline,
+        category: input.category,
+        date: formattedDate,
+        time: formattedTime,
+        locationType: input.locationType,
+        location: locationLabel,
+        imageUrl,
+        startDateTime: startDate.toISOString(),
+        endDateTime: endDate.toISOString(),
+        createdAt: serverTimestamp(),
+        createdBy: activeUser.uid,
+      });
+
+      const newEvent: EventItem = {
+        id: docRef.id,
+        title: input.title,
+        headline,
+        category: input.category,
+        createdBy: activeUser.uid,
+        date: formattedDate,
+        time: formattedTime,
+        location: locationLabel,
+        mode: input.locationType,
+        description: input.description,
+        image: imageUrl,
+        startDateTime: startDate.toISOString(),
+        endDateTime: endDate.toISOString(),
+        source: "user",
+        participants: [],
+      };
+
+      setRemoteEvents((previous) => [newEvent, ...previous]);
+    } catch (error) {
+      if (
+        error instanceof FirebaseError &&
+        error.code === "permission-denied"
+      ) {
+        throw new Error(
+          "Publishing requires a verified account. Please verify your email and try again."
+        );
       }
+      throw error;
+    }
+  }, []);
 
-      if (!activeUser.emailVerified) {
-        throw new Error("Please verify your email before publishing an event.");
+  const updateEvent = useCallback(async (input: UpdateEventInput) => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+      throw new Error("Please sign in before updating an event.");
+    }
+
+    let activeUser = currentUser;
+    try {
+      await currentUser.reload();
+      if (auth.currentUser) {
+        activeUser = auth.currentUser;
       }
+    } catch (error) {
+      console.warn("Failed to refresh auth state before updating event", error);
+    }
 
-      const imageUrl = await uploadImageToImgbb(input.imageUri);
+    const eventRef = doc(db, EVENTS_COLLECTION, input.eventId);
+    const snapshot = await getDoc(eventRef);
+    if (!snapshot.exists()) {
+      throw new Error("Event not found or already deleted.");
+    }
 
-      const startDate = input.startDateTime;
-      const endDate = input.endDateTime;
+    const data = snapshot.data();
+    if (data.createdBy && data.createdBy !== activeUser.uid) {
+      throw new Error("You can only edit events you created.");
+    }
 
-      const formattedDate = formatDateLabel(startDate);
-      const formattedTime = formatTimeLabel(startDate);
+    if (!input.startDateTime || !input.endDateTime) {
+      throw new Error("Invalid event schedule.");
+    }
 
-      const headline = buildHeadline(input.description);
-      const locationLabel =
-        input.locationType === "Onsite" ? "On site" : "Online event";
+    const startDate = input.startDateTime;
+    const endDate = input.endDateTime;
+    const formattedDate = formatDateLabel(startDate);
+    const formattedTime = formatTimeLabel(startDate);
+    const locationLabel =
+      input.locationType === "Onsite" ? "On site" : "Online event";
 
-      try {
-        const eventsCollection = collection(db, EVENTS_COLLECTION);
-        const docRef = await addDoc(eventsCollection, {
-          title: input.title,
-          description: input.description,
-          headline,
-          category: "General",
-          date: formattedDate,
-          time: formattedTime,
-          locationType: input.locationType,
-          location: locationLabel,
-          imageUrl,
-          startDateTime: startDate.toISOString(),
-          endDateTime: endDate.toISOString(),
-          createdAt: serverTimestamp(),
-          createdBy: activeUser.uid,
-        });
+    let imageUrl =
+      (data.imageUrl as string | undefined) ??
+      (data.image as string | undefined) ??
+      "https://images.unsplash.com/photo-1521737604893-d14cc237f11d?auto=format&fit=crop&w=1200&q=80";
 
-        const newEvent: EventItem = {
-          id: docRef.id,
-          title: input.title,
-          headline,
-          category: "General",
-          createdBy: activeUser.uid,
-          date: formattedDate,
-          time: formattedTime,
-          location: locationLabel,
-          mode: input.locationType,
-          description: input.description,
-          image: imageUrl,
-          startDateTime: startDate.toISOString(),
-          endDateTime: endDate.toISOString(),
-          source: "user",
-          participants: [],
-        };
-
-        setRemoteEvents((previous) => [newEvent, ...previous]);
-      } catch (error) {
-        if (error instanceof FirebaseError && error.code === "permission-denied") {
-          throw new Error(
-            "Publishing requires a verified account. Please verify your email and try again.",
-          );
-        }
-        throw error;
+    if (input.imageUpdated) {
+      if (!input.imageUri) {
+        throw new Error("Missing cover image.");
       }
-    },
-    [],
-  );
+      imageUrl = await uploadImageToImgbb(input.imageUri);
+    }
+
+    const headline = buildHeadline(input.description);
+
+    await updateDoc(eventRef, {
+      title: input.title,
+      description: input.description,
+      headline,
+      date: formattedDate,
+      time: formattedTime,
+      locationType: input.locationType,
+      location: locationLabel,
+      startDateTime: startDate.toISOString(),
+      endDateTime: endDate.toISOString(),
+      imageUrl,
+      category: input.category,
+      updatedAt: serverTimestamp(),
+    });
+
+    const participants = parseParticipants(data.participants);
+
+    const updated: EventItem = {
+      id: input.eventId,
+      title: input.title,
+      headline,
+      category: input.category,
+      createdBy: (data.createdBy as string | undefined) ?? activeUser.uid,
+      date: formattedDate,
+      time: formattedTime,
+      location: locationLabel,
+      mode: input.locationType,
+      description: input.description,
+      image: imageUrl,
+      startDateTime: startDate.toISOString(),
+      endDateTime: endDate.toISOString(),
+      source: "user",
+      participants,
+    };
+
+    setRemoteEvents((previous) => {
+      const exists = previous.some((event) => event.id === input.eventId);
+      if (!exists) {
+        return [updated, ...previous];
+      }
+      return previous.map((event) =>
+        event.id === input.eventId ? updated : event
+      );
+    });
+  }, []);
 
   const deleteEvent = useCallback(
     async (eventId: string, requestorUid: string) => {
@@ -336,11 +448,11 @@ export function EventsProvider({ children }: { children: ReactNode }) {
 
         await deleteDoc(eventRef);
         setRemoteEvents((previous) =>
-          previous.filter((event) => event.id !== eventId),
+          previous.filter((event) => event.id !== eventId)
         );
 
         const participantEmails = parseParticipants(data.participants).map(
-          (participant) => participant.email,
+          (participant) => participant.email
         );
 
         return {
@@ -357,12 +469,10 @@ export function EventsProvider({ children }: { children: ReactNode }) {
         throw new Error("Failed to delete event.");
       }
     },
-    [],
+    []
   );
 
-  const combinedEvents = useMemo(() => {
-    return [...remoteEvents, ...staticEventList];
-  }, [remoteEvents]);
+  const combinedEvents = useMemo(() => remoteEvents, [remoteEvents]);
 
   const value = useMemo(
     () => ({
@@ -370,9 +480,10 @@ export function EventsProvider({ children }: { children: ReactNode }) {
       loading,
       refresh: fetchEvents,
       createEvent,
+      updateEvent,
       deleteEvent,
     }),
-    [combinedEvents, loading, fetchEvents, createEvent, deleteEvent],
+    [combinedEvents, loading, fetchEvents, createEvent, updateEvent, deleteEvent]
   );
 
   return (
