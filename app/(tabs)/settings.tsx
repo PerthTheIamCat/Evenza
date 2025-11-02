@@ -10,6 +10,7 @@ import { useRouter } from "expo-router";
 import { Text } from "@/components/Themed";
 import { useColorScheme } from "@/components/useColorScheme";
 import { auth } from "@/lib/firebase";
+import { AUTH_TOKEN_STORAGE_KEY } from "@/constants/auth";
 
 const settingItems = [
   { key: "notifyEvents", label: "Event reminders" },
@@ -83,7 +84,10 @@ export default function SettingsScreen() {
             }
             setSigningOut(true);
             try {
-              await AsyncStorage.removeItem("userEmail");
+              await Promise.all([
+                AsyncStorage.removeItem("userEmail"),
+                AsyncStorage.removeItem(AUTH_TOKEN_STORAGE_KEY),
+              ]);
               await signOut(auth);
               router.replace("/signIn");
             } catch (error) {

@@ -5,14 +5,15 @@ import {
   ThemeProvider,
 } from "@react-navigation/native";
 import { useFonts } from "expo-font";
-import { Stack } from "expo-router";
+import { Stack, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
-import { useEffect } from "react";
+import { useEffect, type ReactNode } from "react";
 import "react-native-reanimated";
 
 import { useColorScheme } from "@/components/useColorScheme";
 import { JoinedEventsProvider } from "@/context/JoinedEventsContext";
 import { EventsProvider } from "@/context/EventsContext";
+import { AuthTokenProvider, useAuthToken } from "@/context/AuthTokenContext";
 
 export {
   // Catch any errors thrown by the Layout component.
@@ -39,13 +40,25 @@ export default function RootLayout() {
     if (error) throw error;
   }, [error]);
 
-  useEffect(() => {
-    if (loaded) {
-      SplashScreen.hideAsync();
-    }
-  }, [loaded]);
+  return (
+    <AuthTokenProvider>
+      <RootLayoutInner fontsLoaded={loaded} />
+    </AuthTokenProvider>
+  );
+}
 
-  if (!loaded) {
+function RootLayoutInner({ fontsLoaded }: { fontsLoaded: boolean }) {
+  const { initialized } = useAuthToken();
+
+  useEffect(() => {
+    if (fontsLoaded && initialized) {
+      SplashScreen.hideAsync().catch(() => {
+        // no-op: splash might already be hidden
+      });
+    }
+  }, [fontsLoaded, initialized]);
+
+  if (!fontsLoaded || !initialized) {
     return null;
   }
 
@@ -61,17 +74,63 @@ function RootLayoutNav() {
         <ThemeProvider
           value={colorScheme === "dark" ? DarkTheme : DefaultTheme}
         >
-          <Stack>
-            <Stack.Screen name="index" options={{ headerShown: false }} />
-            <Stack.Screen name="signIn" options={{ headerShown: false }} />
-            <Stack.Screen
-              name="verification"
-              options={{ headerShown: false }}
-            />
-            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          </Stack>
+          <AuthNavigationGate>
+            <Stack>
+              <Stack.Screen name="index" options={{ headerShown: false }} />
+              <Stack.Screen name="signIn" options={{ headerShown: false }} />
+              <Stack.Screen
+                name="verification"
+                options={{ headerShown: false }}
+              />
+              <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+            </Stack>
+          </AuthNavigationGate>
         </ThemeProvider>
       </JoinedEventsProvider>
     </EventsProvider>
   );
+}
+
+function AuthNavigationGate({ children }: { children: ReactNode }) {
+  const { status, user, initialized } = useAuthToken();
+  const segments = useSegments();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!initialized || status === "checking") {
+      return;
+    }
+
+    const [rootSegment] = segments;
+    const inTabsGroup = rootSegment === "(tabs)";
+    const isAuthScreen =
+      rootSegment === undefined ||
+      rootSegment === "signIn";
+    const needsVerification = user != null && user.emailVerified === false;
+
+    if (status === "authenticated") {
+      if (needsVerification) {
+        if (rootSegment !== "verification") {
+          router.replace("/verification");
+        }
+        return;
+      }
+      if (!inTabsGroup) {
+        router.replace("/(tabs)/home");
+      }
+      return;
+    }
+
+    if (status === "unauthenticated") {
+      if (inTabsGroup || (!isAuthScreen && rootSegment !== "verification")) {
+        router.replace("/signIn");
+      }
+    }
+  }, [initialized, status, user, segments, router]);
+
+  if (status === "checking") {
+    return null;
+  }
+
+  return <>{children}</>;
 }

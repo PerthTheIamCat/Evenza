@@ -7,7 +7,17 @@ import {
 } from "firebase/auth";
 import { doc, serverTimestamp, setDoc } from "firebase/firestore";
 
+import { AUTH_TOKEN_STORAGE_KEY } from "@/constants/auth";
 import { auth, db } from "@/lib/firebase";
+
+const persistToken = async (user: User) => {
+  try {
+    const token = await user.getIdToken();
+    await AsyncStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token);
+  } catch (error) {
+    console.warn("Failed to persist auth token from service", error);
+  }
+};
 
 type AuthSuccess =
   | { success: true; user: User; action: "signin" }
@@ -26,6 +36,7 @@ export const authenticateUser = async (
     try {
       const credential = await signInWithEmailAndPassword(auth, email, password);
       await AsyncStorage.setItem("userEmail", email);
+      await persistToken(credential.user);
       try {
         await setDoc(
           doc(db, "users", email.toLowerCase()),
@@ -47,6 +58,7 @@ export const authenticateUser = async (
       const credential = await createUserWithEmailAndPassword(auth, email, password);
       await sendEmailVerification(credential.user);
       await AsyncStorage.setItem("userEmail", email);
+      await persistToken(credential.user);
       try {
         await setDoc(
           doc(db, "users", email.toLowerCase()),

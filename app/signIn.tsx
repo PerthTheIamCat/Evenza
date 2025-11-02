@@ -11,6 +11,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { FirebaseError } from "firebase/app";
 import {
   createUserWithEmailAndPassword,
   fetchSignInMethodsForEmail,
@@ -18,7 +20,6 @@ import {
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
 } from "firebase/auth";
-import { FirebaseError } from "firebase/app";
 import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
 
 import { SquareActionButton } from "@/components/CustomButton";
@@ -26,7 +27,20 @@ import { CustomInput } from "@/components/CustomInput";
 import { LogoSmallWhiteOutline } from "@/components/Logos/Logos";
 import { Text } from "@/components/Themed";
 import { useColorScheme } from "@/components/useColorScheme";
+import { AUTH_TOKEN_STORAGE_KEY } from "@/constants/auth";
 import { auth, db } from "@/lib/firebase";
+
+const persistAuthToken = async (user: {
+  getIdToken: () => Promise<string>;
+}) => {
+  try {
+    const token = await user.getIdToken();
+    console.log(token);
+    await AsyncStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token);
+  } catch (error) {
+    console.warn("Failed to persist auth token", error);
+  }
+};
 
 type AuthStage = "email" | "createPassword" | "existingPassword";
 
@@ -79,7 +93,9 @@ export default function SignIn() {
       return "loading" as const;
     }
     if (stage === "email") {
-      return trimmedEmail.length > 0 ? ("active" as const) : ("disabled" as const);
+      return trimmedEmail.length > 0
+        ? ("active" as const)
+        : ("disabled" as const);
     }
     if (stage === "createPassword") {
       return password.length > 0 && confirmPassword.length > 0
@@ -87,7 +103,13 @@ export default function SignIn() {
         : ("disabled" as const);
     }
     return password.length > 0 ? ("active" as const) : ("disabled" as const);
-  }, [loading, stage, trimmedEmail.length, password.length, confirmPassword.length]);
+  }, [
+    loading,
+    stage,
+    trimmedEmail.length,
+    password.length,
+    confirmPassword.length,
+  ]);
 
   const resetPasswordFields = () => {
     setPassword("");
@@ -128,7 +150,7 @@ export default function SignIn() {
         try {
           const methods = await fetchSignInMethodsForEmail(
             auth,
-            normalizedEmail,
+            normalizedEmail
           );
           shouldGoToExistingPassword = methods.length > 0;
         } catch (authError) {
@@ -137,7 +159,7 @@ export default function SignIn() {
       }
 
       moveToPasswordStage(
-        shouldGoToExistingPassword ? "existingPassword" : "createPassword",
+        shouldGoToExistingPassword ? "existingPassword" : "createPassword"
       );
     } catch (err) {
       setError(getAuthErrorMessage(err));
@@ -161,8 +183,10 @@ export default function SignIn() {
       const credential = await createUserWithEmailAndPassword(
         auth,
         normalizedEmail,
-        password,
+        password
       );
+
+      await persistAuthToken(credential.user);
 
       try {
         await sendEmailVerification(credential.user);
@@ -178,7 +202,7 @@ export default function SignIn() {
             email: normalizedEmail,
             createdAt: serverTimestamp(),
           },
-          { merge: true },
+          { merge: true }
         );
       } catch (firestoreError) {
         console.warn("Failed to persist user record", firestoreError);
@@ -204,7 +228,7 @@ export default function SignIn() {
       const credential = await signInWithEmailAndPassword(
         auth,
         normalizedEmail,
-        password,
+        password
       );
 
       try {
@@ -212,6 +236,8 @@ export default function SignIn() {
       } catch (reloadError) {
         console.warn("Failed to refresh auth user", reloadError);
       }
+
+      await persistAuthToken(credential.user);
 
       try {
         await setDoc(
@@ -221,10 +247,13 @@ export default function SignIn() {
             email: normalizedEmail,
             lastSignInAt: serverTimestamp(),
           },
-          { merge: true },
+          { merge: true }
         );
       } catch (firestoreError) {
-        console.warn("Failed to update user record after sign in", firestoreError);
+        console.warn(
+          "Failed to update user record after sign in",
+          firestoreError
+        );
       }
 
       if (credential.user.emailVerified) {
@@ -297,7 +326,11 @@ export default function SignIn() {
       : (["#132B7A", "#1E3E8B", "#440027"] as const);
 
   return (
-    <LinearGradient colors={gradient} style={styles.gradient} locations={[0, 0.45, 1]}>
+    <LinearGradient
+      colors={gradient}
+      style={styles.gradient}
+      locations={[0, 0.45, 1]}
+    >
       <SafeAreaView style={styles.safeArea}>
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -389,7 +422,9 @@ export default function SignIn() {
                       moveToPasswordStage("existingPassword");
                     }}
                   >
-                    <Text style={styles.link}>No I already have an account</Text>
+                    <Text style={styles.link}>
+                      No I already have an account
+                    </Text>
                   </TouchableOpacity>
                 ) : (
                   <>
