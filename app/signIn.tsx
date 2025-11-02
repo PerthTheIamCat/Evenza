@@ -14,17 +14,19 @@ import { useRouter } from "expo-router";
 import {
   createUserWithEmailAndPassword,
   fetchSignInMethodsForEmail,
+  sendEmailVerification,
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
 } from "firebase/auth";
 import { FirebaseError } from "firebase/app";
+import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
 
 import { SquareActionButton } from "@/components/CustomButton";
 import { CustomInput } from "@/components/CustomInput";
 import { LogoSmallWhiteOutline } from "@/components/Logos/Logos";
 import { Text } from "@/components/Themed";
 import { useColorScheme } from "@/components/useColorScheme";
-import { auth } from "@/lib/firebase";
+import { auth, db } from "@/lib/firebase";
 
 type AuthStage = "email" | "createPassword" | "existingPassword";
 
@@ -111,12 +113,32 @@ export default function SignIn() {
     setError(null);
     setMessage(null);
     try {
-      const methods = await fetchSignInMethodsForEmail(auth, normalizedEmail);
-      if (methods.length === 0) {
-        moveToPasswordStage("createPassword");
-      } else {
-        moveToPasswordStage("existingPassword");
+      let shouldGoToExistingPassword = false;
+
+      try {
+        const userDoc = await getDoc(doc(db, "users", normalizedEmail));
+        shouldGoToExistingPassword = userDoc.exists();
+        console.log("User doc data:", userDoc.data());
+        console.log("email checked:", normalizedEmail);
+      } catch (firestoreError) {
+        console.warn("Failed to read users collection", firestoreError);
       }
+
+      if (!shouldGoToExistingPassword) {
+        try {
+          const methods = await fetchSignInMethodsForEmail(
+            auth,
+            normalizedEmail,
+          );
+          shouldGoToExistingPassword = methods.length > 0;
+        } catch (authError) {
+          console.warn("Fallback method lookup failed", authError);
+        }
+      }
+
+      moveToPasswordStage(
+        shouldGoToExistingPassword ? "existingPassword" : "createPassword",
+      );
     } catch (err) {
       setError(getAuthErrorMessage(err));
     } finally {
@@ -136,7 +158,32 @@ export default function SignIn() {
     setError(null);
     setMessage(null);
     try {
-      await createUserWithEmailAndPassword(auth, normalizedEmail, password);
+      const credential = await createUserWithEmailAndPassword(
+        auth,
+        normalizedEmail,
+        password,
+      );
+
+      try {
+        await sendEmailVerification(credential.user);
+      } catch (verificationError) {
+        console.warn("Failed to send verification email", verificationError);
+      }
+
+      try {
+        await setDoc(
+          doc(db, "users", normalizedEmail),
+          {
+            uid: credential.user.uid,
+            email: normalizedEmail,
+            createdAt: serverTimestamp(),
+          },
+          { merge: true },
+        );
+      } catch (firestoreError) {
+        console.warn("Failed to persist user record", firestoreError);
+      }
+
       moveToPasswordStage("existingPassword");
       router.push("/verification");
     } catch (err) {
@@ -154,8 +201,37 @@ export default function SignIn() {
     setError(null);
     setMessage(null);
     try {
-      await signInWithEmailAndPassword(auth, normalizedEmail, password);
-      router.replace("/(tabs)/home");
+      const credential = await signInWithEmailAndPassword(
+        auth,
+        normalizedEmail,
+        password,
+      );
+
+      try {
+        await credential.user.reload();
+      } catch (reloadError) {
+        console.warn("Failed to refresh auth user", reloadError);
+      }
+
+      try {
+        await setDoc(
+          doc(db, "users", normalizedEmail),
+          {
+            uid: credential.user.uid,
+            email: normalizedEmail,
+            lastSignInAt: serverTimestamp(),
+          },
+          { merge: true },
+        );
+      } catch (firestoreError) {
+        console.warn("Failed to update user record after sign in", firestoreError);
+      }
+
+      if (credential.user.emailVerified) {
+        router.replace("/(tabs)/home");
+      } else {
+        router.replace("/verification");
+      }
     } catch (err) {
       setError(getAuthErrorMessage(err));
     } finally {
