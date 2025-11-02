@@ -1,31 +1,50 @@
-import { ScrollView, StyleSheet, Switch, TouchableOpacity, View } from "react-native";
 import { useState } from "react";
+import {
+  ScrollView,
+  StyleSheet,
+  Switch,
+  TouchableOpacity,
+  View,
+} from "react-native";
 
 import { LinearGradient } from "expo-linear-gradient";
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { signOut } from "firebase/auth";
 import { useRouter } from "expo-router";
+import { signOut } from "firebase/auth";
 
 import { Text } from "@/components/Themed";
 import { useColorScheme } from "@/components/useColorScheme";
-import { auth } from "@/lib/firebase";
 import { AUTH_TOKEN_STORAGE_KEY } from "@/constants/auth";
+import { auth } from "@/lib/firebase";
+import {
+  useNotificationPreferences,
+  type NotificationPreferenceKey,
+} from "@/context/NotificationPreferencesContext";
 
-const settingItems = [
-  { key: "notifyEvents", label: "Event reminders" },
-  { key: "notifyUpdates", label: "Product updates" },
-  { key: "notifyOffers", label: "Exclusive offers" },
+const notificationItems: Array<{
+  key: NotificationPreferenceKey;
+  label: string;
+  description: string;
+}> = [
+  {
+    key: "notifyOnJoin",
+    label: "Notify me when I join an event",
+    description:
+      "Receive confirmations and reminders for events you add to your list.",
+  },
+  {
+    key: "notifyOnCancellation",
+    label: "Alert me if an event is canceled",
+    description:
+      "Get notified when organizers cancel events you've already joined.",
+  },
 ];
 
 export default function SettingsScreen() {
   const colorScheme = useColorScheme();
   const router = useRouter();
-  const [toggles, setToggles] = useState<Record<string, boolean>>({
-    notifyEvents: true,
-    notifyUpdates: false,
-    notifyOffers: true,
-  });
+  const { preferences, setPreference, loading } = useNotificationPreferences();
   const [signingOut, setSigningOut] = useState(false);
 
   const gradient =
@@ -34,46 +53,39 @@ export default function SettingsScreen() {
       : (["#142860", "#223C92", "#4B0A74"] as const);
 
   return (
-    <LinearGradient colors={gradient} style={styles.gradient} locations={[0, 0.4, 1]}>
+    <LinearGradient
+      colors={gradient}
+      style={styles.gradient}
+      locations={[0, 0.4, 1]}
+    >
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={styles.title}>Settings</Text>
-        <Text style={styles.subtitle}>Personalize notifications and preferences.</Text>
+        <Text style={styles.subtitle}>
+          Keep track of your event activity without leaving this device.
+        </Text>
 
         <View style={styles.section}>
-          <Text style={styles.sectionLabel}>Notifications</Text>
-          {settingItems.map((item) => (
+          <Text style={styles.sectionLabel}>Event notifications</Text>
+          {notificationItems.map((item) => (
             <View key={item.key} style={styles.settingRow}>
               <View>
                 <Text style={styles.settingLabel}>{item.label}</Text>
                 <Text style={styles.settingDescription}>
-                  Stay in the loop with curated updates.
+                  {item.description}
                 </Text>
               </View>
               <Switch
-                value={toggles[item.key]}
-                onValueChange={(value) =>
-                  setToggles((prev) => ({
-                    ...prev,
-                    [item.key]: value,
-                  }))
-                }
-                thumbColor={toggles[item.key] ? "#6A6DFF" : "#DAD9F5"}
-                trackColor={{ false: "rgba(255,255,255,0.2)", true: "rgba(106,109,255,0.45)" }}
+                value={preferences[item.key]}
+                onValueChange={(value) => setPreference(item.key, value)}
+                disabled={loading}
+                thumbColor={preferences[item.key] ? "#6A6DFF" : "#DAD9F5"}
+                trackColor={{
+                  false: "rgba(255,255,255,0.2)",
+                  true: "rgba(106,109,255,0.45)",
+                }}
               />
             </View>
           ))}
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>Support</Text>
-          <Text style={styles.settingLabel}>Help Center</Text>
-          <Text style={styles.settingDescription}>
-            Browse FAQs or reach out to the Evenza team.
-          </Text>
-          <Text style={[styles.settingLabel, { marginTop: 18 }]}>Terms & Privacy</Text>
-          <Text style={styles.settingDescription}>
-            Review how we collect and secure your information.
-          </Text>
         </View>
 
         <TouchableOpacity
@@ -98,7 +110,9 @@ export default function SettingsScreen() {
           }}
           style={styles.signOutButton}
         >
-          <Text style={styles.signOutLabel}>{signingOut ? "Signing out..." : "Sign out"}</Text>
+          <Text style={styles.signOutLabel}>
+            {signingOut ? "Signing out..." : "Sign out"}
+          </Text>
         </TouchableOpacity>
       </ScrollView>
     </LinearGradient>
@@ -150,6 +164,7 @@ const styles = StyleSheet.create({
     color: "rgba(255,255,255,0.65)",
     fontSize: 14,
     marginTop: 4,
+    width: 250,
   },
   signOutButton: {
     marginTop: 12,

@@ -1,10 +1,12 @@
-import { useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   Dimensions,
   Pressable,
   ScrollView,
   StyleSheet,
+  TextInput,
   View,
+  RefreshControl,
 } from "react-native";
 
 import Ionicons from "@expo/vector-icons/Ionicons";
@@ -15,8 +17,9 @@ import { SquareActionButton } from "@/components/CustomButton";
 import { EventCard } from "@/components/EventCard";
 import { Text } from "@/components/Themed";
 import { useColorScheme } from "@/components/useColorScheme";
-import { useEvents } from "@/context/EventsContext";
 import type { EventItem } from "@/constants/events";
+import { useAuthToken } from "@/context/AuthTokenContext";
+import { useEvents } from "@/context/EventsContext";
 
 const { width } = Dimensions.get("window");
 
@@ -37,12 +40,32 @@ const getEventTimestamp = (event: EventItem): number => {
 export default function HomeScreen() {
   const colorScheme = useColorScheme();
   const router = useRouter();
-  const { events } = useEvents();
+  const { events, refresh } = useEvents();
+  const { user } = useAuthToken();
+  const [searchQuery, setSearchQuery] = useState("");
+  const [refreshing, setRefreshing] = useState(false);
 
   const gradient =
     colorScheme === "dark"
       ? (["#0A144A", "#1B2C8D", "#320045"] as const)
       : (["#162E7A", "#2343A0", "#4A0A7D"] as const);
+
+  const normalizedQuery = searchQuery.trim().toLowerCase();
+
+  const searchResults = useMemo(() => {
+    if (!normalizedQuery) {
+      return [];
+    }
+    return events
+      .filter((event) => {
+        const title = event.title?.toLowerCase() ?? "";
+        const createdBy = event.createdBy?.toLowerCase() ?? "";
+        return (
+          title.includes(normalizedQuery) || createdBy.includes(normalizedQuery)
+        );
+      })
+      .sort((a, b) => getEventTimestamp(a) - getEventTimestamp(b));
+  }, [events, normalizedQuery]);
 
   const featuredEvent = useMemo(() => {
     if (events.length === 0) {
@@ -56,6 +79,10 @@ export default function HomeScreen() {
       (event) => event.isPopular && event.id !== featuredEvent?.id
     );
   }, [events, featuredEvent]);
+
+  const userEmail = user?.email ?? "";
+  const profileInitial = userEmail.trim().charAt(0).toUpperCase() || "E";
+  const headline = userEmail || "Discover new experiences";
 
   const upcomingEvents = useMemo(() => {
     const filtered = events.filter((event) => {
@@ -91,6 +118,15 @@ export default function HomeScreen() {
       .map((item) => item.event);
   }, [events, featuredEvent]);
 
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await refresh();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refresh]);
+
   return (
     <LinearGradient
       colors={gradient}
@@ -100,14 +136,23 @@ export default function HomeScreen() {
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor="#FFFFFF"
+            colors={["#FFFFFF"]}
+            progressBackgroundColor="rgba(255,255,255,0.16)"
+          />
+        }
       >
         <View style={styles.heroRow}>
           <View style={styles.brandAvatar}>
-            <Text style={styles.brandInitial}>E</Text>
+            <Text style={styles.brandInitial}>{profileInitial}</Text>
           </View>
           <View style={styles.greeting}>
             <Text style={styles.subtitle}>Welcome back</Text>
-            <Text style={styles.title}>Discover new experiences</Text>
+            <Text style={styles.title}>{headline}</Text>
           </View>
           <Pressable
             style={styles.notificationButton}
@@ -118,72 +163,125 @@ export default function HomeScreen() {
           </Pressable>
         </View>
 
-        <Pressable style={styles.searchBar} onPress={() => {}}>
+        <View style={styles.searchBar}>
           <Ionicons name="search" size={20} color="rgba(255,255,255,0.6)" />
-          <Text style={styles.searchPlaceholder}>
-            Search events, hosts, venues
-          </Text>
-        </Pressable>
-
-        {featuredEvent && (
-          <View style={styles.section}>
-            <Text style={styles.sectionLabel}>Featured</Text>
-            <EventCard
-              item={featuredEvent}
-              variant="featured"
-              onPress={(item) => router.push(`/home/event/${item.id}`)}
-              badge="Top pick"
-            />
-          </View>
-        )}
-
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionLabel}>Popular this week</Text>
-          <Pressable onPress={() => {}}>
-            <Text style={styles.actionText}>See all</Text>
-          </Pressable>
-        </View>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.horizontalList}
-          snapToAlignment="center"
-          decelerationRate="fast"
-          snapToInterval={width * 0.75 + 20}
-        >
-          {popularEvents.map((event) => (
-            <View key={event.id} style={styles.horizontalCard}>
-              <EventCard
-                item={event}
-                variant="default"
-                onPress={(item) => router.push(`/home/event/${item.id}`)}
-                badge={event.isPopular ? "Popular" : undefined}
-              />
-            </View>
-          ))}
-        </ScrollView>
-
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionLabel}>Upcoming</Text>
-          <SquareActionButton
-            state="active"
-            iconSize={28}
-            onPress={() => router.push("/create")}
-            accessibilityLabel="Create an event"
+          <TextInput
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder="Search events or hosts"
+            placeholderTextColor="rgba(255,255,255,0.6)"
+            style={styles.searchInput}
+            returnKeyType="search"
+            autoCapitalize="none"
+            autoCorrect={false}
           />
+          {searchQuery.length > 0 && (
+            <Pressable
+              onPress={() => setSearchQuery("")}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Clear search"
+            >
+              <Ionicons
+                name="close-circle"
+                size={20}
+                color="rgba(255,255,255,0.5)"
+              />
+            </Pressable>
+          )}
         </View>
 
-        <View style={styles.upcomingList}>
-          {upcomingEvents.map((event) => (
-            <View key={event.id} style={styles.upcomingItem}>
-              <EventCard
-                item={event}
-                variant="default"
-                onPress={(item) => router.push(`/home/event/${item.id}`)}
+        {normalizedQuery ? (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionLabel}>Search results</Text>
+              <Text style={styles.searchMeta}>
+                {searchResults.length}{" "}
+                {searchResults.length === 1 ? "event" : "events"}
+              </Text>
+            </View>
+            {searchResults.length === 0 ? (
+              <Text style={styles.emptyStateText}>
+                No events match your search. Try a different keyword.
+              </Text>
+            ) : (
+              <View style={styles.upcomingList}>
+                {searchResults.map((event) => (
+                  <View key={event.id} style={styles.upcomingItem}>
+                    <EventCard
+                      item={event}
+                      variant="default"
+                      onPress={(item) => router.push(`/home/event/${item.id}`)}
+                      badge={event.isPopular ? "Popular" : undefined}
+                    />
+                  </View>
+                ))}
+              </View>
+            )}
+          </View>
+        ) : (
+          <>
+            {featuredEvent && (
+              <View style={styles.section}>
+                <Text style={styles.sectionLabel}>Featured</Text>
+                <EventCard
+                  item={featuredEvent}
+                  variant="featured"
+                  onPress={(item) => router.push(`/home/event/${item.id}`)}
+                  badge="Top pick"
+                />
+              </View>
+            )}
+
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionLabel}>Popular this week</Text>
+              <Pressable onPress={() => {}}>
+                <Text style={styles.actionText}>See all</Text>
+              </Pressable>
+            </View>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.horizontalList}
+              snapToAlignment="center"
+              decelerationRate="fast"
+              snapToInterval={width * 0.75 + 20}
+            >
+              {popularEvents.map((event) => (
+                <View key={event.id} style={styles.horizontalCard}>
+                  <EventCard
+                    item={event}
+                    variant="default"
+                    onPress={(item) => router.push(`/home/event/${item.id}`)}
+                    badge={event.isPopular ? "Popular" : undefined}
+                  />
+                </View>
+              ))}
+            </ScrollView>
+
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionLabel}>Upcoming</Text>
+              <SquareActionButton
+                state="active"
+                iconSize={28}
+                onPress={() => router.push("/create")}
+                accessibilityLabel="Create an event"
               />
             </View>
-          ))}
-        </View>
+
+            <View style={styles.upcomingList}>
+              {upcomingEvents.map((event) => (
+                <View key={event.id} style={styles.upcomingItem}>
+                  <EventCard
+                    item={event}
+                    variant="default"
+                    onPress={(item) => router.push(`/home/event/${item.id}`)}
+                  />
+                </View>
+              ))}
+            </View>
+          </>
+        )}
       </ScrollView>
     </LinearGradient>
   );
@@ -247,8 +345,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     gap: 12,
   },
-  searchPlaceholder: {
-    color: "rgba(255,255,255,0.6)",
+  searchInput: {
+    flex: 1,
+    color: "#FFFFFF",
+    fontSize: 16,
+    paddingVertical: 0,
+  },
+  searchMeta: {
+    color: "rgba(255,255,255,0.7)",
+    fontSize: 14,
+  },
+  emptyStateText: {
+    color: "rgba(255,255,255,0.7)",
     fontSize: 16,
   },
   section: {

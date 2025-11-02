@@ -1,5 +1,12 @@
-import { useCallback, useMemo } from "react";
-import { Image, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { useCallback, useMemo, useState } from "react";
+import {
+  Alert,
+  Image,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  View,
+} from "react-native";
 
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -7,28 +14,140 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 
 import { Text } from "@/components/Themed";
 import { useColorScheme } from "@/components/useColorScheme";
-import { useJoinedEvents } from "@/context/JoinedEventsContext";
+import { useAuthToken } from "@/context/AuthTokenContext";
 import { useEvents } from "@/context/EventsContext";
+import { useJoinedEvents } from "@/context/JoinedEventsContext";
+import { useNotificationPreferences } from "@/context/NotificationPreferencesContext";
+import {
+  sendEventCancellationEmail,
+  sendJoinEventEmail,
+} from "@/services/email.service";
 
 export default function EventDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const colorScheme = useColorScheme();
-  const { events } = useEvents();
-  const { joinEvent, isJoined } = useJoinedEvents();
+  const { events, deleteEvent } = useEvents();
+  const { joinEvent, isJoined, leaveEvent } = useJoinedEvents();
+  const { user } = useAuthToken();
+  const { preferences: notificationPreferences } = useNotificationPreferences();
+  const userEmail = user?.email ?? null;
+  const notifyOnJoin = notificationPreferences.notifyOnJoin;
+  const notifyOnCancellation = notificationPreferences.notifyOnCancellation;
+  const [deleting, setDeleting] = useState(false);
 
   const event = useMemo(
     () => events.find((item) => item.id === id),
-    [events, id],
+    [events, id]
   );
 
   const alreadyJoined = event ? isJoined(event.id) : false;
+  const canDelete =
+    !!event &&
+    event.source === "user" &&
+    !!event.createdBy &&
+    !!user?.uid &&
+    event.createdBy === user.uid;
 
-  const handleJoin = useCallback(() => {
-    if (event && !alreadyJoined) {
-      joinEvent(event);
+  const handleJoin = useCallback(async () => {
+    if (!event || alreadyJoined) {
+      return;
     }
-  }, [alreadyJoined, event, joinEvent]);
+
+    joinEvent(event);
+
+    const recipientEmail = userEmail;
+    if (!recipientEmail || !notifyOnJoin) {
+      return;
+    }
+
+    await sendJoinEventEmail({
+      recipientEmail,
+      eventTitle: event.title,
+      eventDate: event.date,
+      eventLocation: event.location,
+      organizerEmail: event.createdBy,
+    });
+  }, [alreadyJoined, event, joinEvent, notifyOnJoin, userEmail]);
+
+  const performDelete = useCallback(async () => {
+    if (!event || !user?.uid) {
+      return;
+    }
+    setDeleting(true);
+    const fallbackEvent = event;
+    try {
+      const result = await deleteEvent(event.id, user.uid);
+
+      if (notifyOnCancellation) {
+        const uniqueRecipients = Array.from(
+          new Set(
+            result.participants.filter(
+              (email) => !!email && email !== userEmail
+            )
+          )
+        );
+
+        if (uniqueRecipients.length > 0) {
+          try {
+            await sendEventCancellationEmail({
+              recipients: uniqueRecipients,
+              eventTitle: result.title || fallbackEvent.title,
+              eventDate: result.date || fallbackEvent.date,
+              eventLocation: result.location || fallbackEvent.location,
+              organizerEmail: userEmail ?? undefined,
+            });
+          } catch (emailError) {
+            console.warn("Failed to send cancellation emails", emailError);
+          }
+        }
+      }
+
+      leaveEvent(event.id);
+
+      Alert.alert("Event deleted", "Your event has been removed.");
+      router.replace("/(tabs)/home");
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Failed to delete event. Please try again.";
+      Alert.alert("Unable to delete event", message);
+    } finally {
+      setDeleting(false);
+    }
+  }, [
+    deleteEvent,
+    event,
+    leaveEvent,
+    notifyOnCancellation,
+    router,
+    user?.uid,
+    userEmail,
+  ]);
+
+  const confirmDelete = useCallback(() => {
+    if (!canDelete || deleting) {
+      return;
+    }
+    Alert.alert(
+      "Delete event",
+      "This will cancel the event for everyone who joined. Do you want to continue?",
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            void performDelete();
+          },
+        },
+      ]
+    );
+  }, [canDelete, deleting, performDelete]);
 
   if (!event) {
     return null;
@@ -57,9 +176,28 @@ export default function EventDetailScreen() {
           >
             <Ionicons name="chevron-back" size={24} color="#FFFFFF" />
           </Pressable>
-          <Pressable style={styles.shareButton} onPress={() => {}}>
-            <Ionicons name="share-outline" size={22} color="#FFFFFF" />
-          </Pressable>
+          {canDelete ? (
+            <Pressable
+              style={[
+                styles.shareButton,
+                deleting ? styles.disabledAction : null,
+              ]}
+              onPress={confirmDelete}
+              accessibilityLabel="Delete event"
+              accessibilityRole="button"
+              disabled={deleting}
+            >
+              <Ionicons name="trash-outline" size={22} color="#FFFFFF" />
+            </Pressable>
+          ) : (
+            <Pressable
+              style={styles.shareButton}
+              onPress={() => {}}
+              accessibilityLabel="Share event"
+            >
+              <Ionicons name="share-outline" size={22} color="#FFFFFF" />
+            </Pressable>
+          )}
         </View>
 
         <View style={styles.heroCard}>
@@ -117,12 +255,16 @@ export default function EventDetailScreen() {
               ? "Event already added to My Events"
               : "Join this event"
           }
-          onPress={handleJoin}
-          disabled={alreadyJoined}
+          onPress={() => {
+            void handleJoin();
+          }}
+          disabled={alreadyJoined || deleting}
           style={({ pressed }) => [
             styles.joinButton,
-            alreadyJoined && styles.joinButtonDisabled,
-            pressed && !alreadyJoined ? styles.joinButtonPressed : null,
+            (alreadyJoined || deleting) && styles.joinButtonDisabled,
+            pressed && !alreadyJoined && !deleting
+              ? styles.joinButtonPressed
+              : null,
           ]}
         >
           <Text style={styles.joinButtonText}>
@@ -164,6 +306,9 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.16)",
     justifyContent: "center",
     alignItems: "center",
+  },
+  disabledAction: {
+    opacity: 0.45,
   },
   heroCard: {
     borderRadius: 32,

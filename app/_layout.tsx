@@ -11,9 +11,10 @@ import { useEffect, type ReactNode } from "react";
 import "react-native-reanimated";
 
 import { useColorScheme } from "@/components/useColorScheme";
-import { JoinedEventsProvider } from "@/context/JoinedEventsContext";
 import { EventsProvider } from "@/context/EventsContext";
 import { AuthTokenProvider, useAuthToken } from "@/context/AuthTokenContext";
+import { JoinedEventsProvider } from "@/context/JoinedEventsContext";
+import { NotificationPreferencesProvider } from "@/context/NotificationPreferencesContext";
 
 export {
   // Catch any errors thrown by the Layout component.
@@ -69,25 +70,27 @@ function RootLayoutNav() {
   const colorScheme = useColorScheme();
 
   return (
-    <EventsProvider>
-      <JoinedEventsProvider>
-        <ThemeProvider
-          value={colorScheme === "dark" ? DarkTheme : DefaultTheme}
-        >
-          <AuthNavigationGate>
-            <Stack>
-              <Stack.Screen name="index" options={{ headerShown: false }} />
-              <Stack.Screen name="signIn" options={{ headerShown: false }} />
-              <Stack.Screen
-                name="verification"
-                options={{ headerShown: false }}
-              />
-              <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-            </Stack>
-          </AuthNavigationGate>
-        </ThemeProvider>
-      </JoinedEventsProvider>
-    </EventsProvider>
+    <NotificationPreferencesProvider>
+      <EventsProvider>
+        <JoinedEventsProvider>
+          <ThemeProvider
+            value={colorScheme === "dark" ? DarkTheme : DefaultTheme}
+          >
+            <AuthNavigationGate>
+              <Stack>
+                <Stack.Screen name="index" options={{ headerShown: false }} />
+                <Stack.Screen name="signIn" options={{ headerShown: false }} />
+                <Stack.Screen
+                  name="verification"
+                  options={{ headerShown: false }}
+                />
+                <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+              </Stack>
+            </AuthNavigationGate>
+          </ThemeProvider>
+        </JoinedEventsProvider>
+      </EventsProvider>
+    </NotificationPreferencesProvider>
   );
 }
 

@@ -1,5 +1,10 @@
 export type EventCategory = "Music" | "Tech" | "Art" | "Workshop" | "General";
 
+export type EventParticipant = {
+  email: string;
+  uid?: string | null;
+};
+
 export type EventItem = {
   id: string;
   title: string;
@@ -17,6 +22,7 @@ export type EventItem = {
   startDateTime?: string;
   endDateTime?: string;
   source?: "static" | "user";
+  participants?: EventParticipant[];
 };
 
 export const events: EventItem[] = [

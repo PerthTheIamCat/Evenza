@@ -8,11 +8,14 @@ import {
   type ReactNode,
 } from "react";
 
-import * as FileSystem from "expo-file-system";
+import { readAsStringAsync } from "expo-file-system/legacy";
 import {
   Timestamp,
   addDoc,
   collection,
+  deleteDoc,
+  doc,
+  getDoc,
   getDocs,
   orderBy,
   query,
@@ -22,7 +25,11 @@ import {
 } from "firebase/firestore";
 import { FirebaseError } from "firebase/app";
 
-import { events as staticEvents, type EventItem } from "@/constants/events";
+import {
+  events as staticEvents,
+  type EventItem,
+  type EventParticipant,
+} from "@/constants/events";
 import { auth, db } from "@/lib/firebase";
 
 export type LocationType = "Onsite" | "Online";
@@ -36,11 +43,19 @@ export type CreateEventInput = {
   imageUri: string;
 };
 
+type DeleteEventResult = {
+  title: string;
+  date?: string;
+  location?: string;
+  participants: string[];
+};
+
 type EventsContextValue = {
   events: EventItem[];
   loading: boolean;
   refresh: () => Promise<void>;
   createEvent: (input: CreateEventInput) => Promise<void>;
+  deleteEvent: (eventId: string, requestorUid: string) => Promise<DeleteEventResult>;
 };
 
 const EventsContext = createContext<EventsContextValue | undefined>(undefined);
@@ -50,7 +65,7 @@ const staticEventList = staticEvents.map((event) => ({
   source: "static" as const,
 }));
 
-const EVENTS_COLLECTION = "events";
+export const EVENTS_COLLECTION = "events";
 
 const formatDateLabel = (date: Date) =>
   date.toLocaleDateString("en-US", {
@@ -90,6 +105,44 @@ const buildHeadline = (description: string) => {
   return `${singleLine.slice(0, 87)}...`;
 };
 
+const parseParticipants = (value: unknown): EventParticipant[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const collected: EventParticipant[] = [];
+  for (const entry of value) {
+    if (typeof entry === "string") {
+      const email = entry.trim();
+      if (email) {
+        collected.push({ email });
+      }
+      continue;
+    }
+
+    if (entry && typeof entry === "object" && "email" in entry) {
+      const emailValue = (entry as { email?: unknown }).email;
+      if (typeof emailValue === "string" && emailValue.trim()) {
+        const uidValue = (entry as { uid?: unknown }).uid;
+        collected.push({
+          email: emailValue.trim(),
+          uid: typeof uidValue === "string" ? uidValue : null,
+        });
+      }
+    }
+  }
+
+  const seen = new Set<string>();
+  return collected.filter((participant) => {
+    const key = participant.email.toLowerCase();
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+};
+
 const mapDocToEvent = (
   doc: QueryDocumentSnapshot<DocumentData>,
 ): EventItem => {
@@ -121,6 +174,7 @@ const mapDocToEvent = (
     startDateTime: startDate ? startDate.toISOString() : undefined,
     endDateTime: endDate ? endDate.toISOString() : undefined,
     source: "user",
+    participants: parseParticipants(data.participants),
   };
 };
 
@@ -130,8 +184,8 @@ const uploadImageToImgbb = async (uri: string) => {
     throw new Error("Missing EXPO_PUBLIC_IMGBB_API_KEY environment variable.");
   }
 
-  const base64 = await FileSystem.readAsStringAsync(uri, {
-    encoding: FileSystem.EncodingType.Base64,
+  const base64 = await readAsStringAsync(uri, {
+    encoding: "base64",
   });
 
   const formData = new FormData();
@@ -243,6 +297,7 @@ export function EventsProvider({ children }: { children: ReactNode }) {
           startDateTime: startDate.toISOString(),
           endDateTime: endDate.toISOString(),
           source: "user",
+          participants: [],
         };
 
         setRemoteEvents((previous) => [newEvent, ...previous]);
@@ -258,6 +313,53 @@ export function EventsProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  const deleteEvent = useCallback(
+    async (eventId: string, requestorUid: string) => {
+      if (!eventId) {
+        throw new Error("Missing event reference.");
+      }
+      if (!requestorUid) {
+        throw new Error("You must be signed in to delete an event.");
+      }
+
+      try {
+        const eventRef = doc(db, EVENTS_COLLECTION, eventId);
+        const snapshot = await getDoc(eventRef);
+        if (!snapshot.exists()) {
+          throw new Error("Event not found or already deleted.");
+        }
+
+        const data = snapshot.data();
+        if (data.createdBy && data.createdBy !== requestorUid) {
+          throw new Error("You can only delete events you created.");
+        }
+
+        await deleteDoc(eventRef);
+        setRemoteEvents((previous) =>
+          previous.filter((event) => event.id !== eventId),
+        );
+
+        const participantEmails = parseParticipants(data.participants).map(
+          (participant) => participant.email,
+        );
+
+        return {
+          title: (data.title as string | undefined) ?? "",
+          date: (data.date as string | undefined) ?? "",
+          location: (data.location as string | undefined) ?? "",
+          participants: participantEmails,
+        } as DeleteEventResult;
+      } catch (error) {
+        console.warn("Failed to delete event", error);
+        if (error instanceof Error) {
+          throw error;
+        }
+        throw new Error("Failed to delete event.");
+      }
+    },
+    [],
+  );
+
   const combinedEvents = useMemo(() => {
     return [...remoteEvents, ...staticEventList];
   }, [remoteEvents]);
@@ -268,8 +370,9 @@ export function EventsProvider({ children }: { children: ReactNode }) {
       loading,
       refresh: fetchEvents,
       createEvent,
+      deleteEvent,
     }),
-    [combinedEvents, loading, fetchEvents, createEvent],
+    [combinedEvents, loading, fetchEvents, createEvent, deleteEvent],
   );
 
   return (

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
+  RefreshControl,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -46,11 +47,12 @@ const SectionHeader = ({ title, actionLabel, onAction }: SectionHeaderProps) => 
 export default function MyEventsScreen() {
   const colorScheme = useColorScheme();
   const router = useRouter();
-  const { events } = useEvents();
+  const { events, refresh } = useEvents();
   const { joinedEvents, leaveEvent } = useJoinedEvents();
   const currentUid = auth.currentUser?.uid ?? null;
   const [showAllCreated, setShowAllCreated] = useState(false);
   const [showAllJoined, setShowAllJoined] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   const createdEvents = useMemo(() => {
     if (!currentUid) {
@@ -129,6 +131,15 @@ export default function MyEventsScreen() {
     router.push("/home");
   };
 
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await refresh();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refresh]);
+
   useEffect(() => {
     if (createdEvents.length <= 1 && showAllCreated) {
       setShowAllCreated(false);
@@ -151,6 +162,15 @@ export default function MyEventsScreen() {
         <ScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.content}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              tintColor="#FFFFFF"
+              colors={["#FFFFFF"]}
+              progressBackgroundColor="rgba(255,255,255,0.16)"
+            />
+          }
         >
           <View style={styles.header}>
             <Text style={styles.title}>Your Events</Text>
