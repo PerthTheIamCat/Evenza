@@ -13,6 +13,7 @@ export type EventItem = {
   image: string;
   isFeatured?: boolean;
   isPopular?: boolean;
+  createdBy?: string;
   startDateTime?: string;
   endDateTime?: string;
   source?: "static" | "user";

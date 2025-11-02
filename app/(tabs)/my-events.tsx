@@ -1,9 +1,10 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Pressable,
   ScrollView,
   StyleSheet,
+  TouchableOpacity,
   View,
 } from "react-native";
 
@@ -18,13 +19,57 @@ import {
 import { EventCard } from "@/components/EventCard";
 import { Text } from "@/components/Themed";
 import { useColorScheme } from "@/components/useColorScheme";
+import { useEvents } from "@/context/EventsContext";
 import { useJoinedEvents } from "@/context/JoinedEventsContext";
 import type { EventItem } from "@/constants/events";
+import { auth } from "@/lib/firebase";
+
+type SectionHeaderProps = {
+  title: string;
+  actionLabel?: string;
+  onAction?: () => void;
+};
+
+const SectionHeader = ({ title, actionLabel, onAction }: SectionHeaderProps) => (
+  <View style={styles.sectionHeader}>
+    <Text style={styles.sectionTitle}>{title}</Text>
+    {actionLabel && onAction ? (
+      <TouchableOpacity onPress={onAction} activeOpacity={0.8} hitSlop={8}>
+        <Text style={styles.sectionAction}>{actionLabel}</Text>
+      </TouchableOpacity>
+    ) : (
+      <View style={styles.sectionActionSpacer} />
+    )}
+  </View>
+);
 
 export default function MyEventsScreen() {
   const colorScheme = useColorScheme();
   const router = useRouter();
+  const { events } = useEvents();
   const { joinedEvents, leaveEvent } = useJoinedEvents();
+  const currentUid = auth.currentUser?.uid ?? null;
+  const [showAllCreated, setShowAllCreated] = useState(false);
+  const [showAllJoined, setShowAllJoined] = useState(false);
+
+  const createdEvents = useMemo(() => {
+    if (!currentUid) {
+      return [] as EventItem[];
+    }
+    return events.filter((event) => event.createdBy === currentUid);
+  }, [events, currentUid]);
+
+  const joinedFromOthers = useMemo(() => {
+    if (!currentUid) {
+      return joinedEvents;
+    }
+    return joinedEvents.filter((event) => event.createdBy !== currentUid);
+  }, [joinedEvents, currentUid]);
+
+  const gradient =
+    colorScheme === "dark"
+      ? (["#09124A", "#1B2C8D", "#350047"] as const)
+      : (["#152E71", "#2240A0", "#4B0A74"] as const);
 
   const handleEventPress = useCallback(
     (item: EventItem) => {
@@ -40,12 +85,61 @@ export default function MyEventsScreen() {
     [leaveEvent],
   );
 
-  const gradient =
-    colorScheme === "dark"
-      ? (["#09124A", "#1B2C8D", "#350047"] as const)
-      : (["#152E71", "#2240A0", "#4B0A74"] as const);
+  const createdVisible = useMemo(() => {
+    if (showAllCreated) {
+      return createdEvents;
+    }
+    return createdEvents.slice(0, 1);
+  }, [createdEvents, showAllCreated]);
 
-  const hasEvents = joinedEvents.length > 0;
+  const joinedVisible = useMemo(() => {
+    if (showAllJoined) {
+      return joinedFromOthers;
+    }
+    return joinedFromOthers.slice(0, 1);
+  }, [joinedFromOthers, showAllJoined]);
+
+  const createdActionLabel =
+    createdEvents.length > 1
+      ? showAllCreated
+        ? undefined
+        : "See all"
+      : "Create event";
+
+  const joinedActionLabel =
+    joinedFromOthers.length > 1
+      ? showAllJoined
+        ? undefined
+        : "See all"
+      : "Discover";
+
+  const handleCreatedAction = () => {
+    if (createdEvents.length > 1) {
+      setShowAllCreated(true);
+      return;
+    }
+    router.push("/create");
+  };
+
+  const handleJoinedAction = () => {
+    if (joinedFromOthers.length > 1) {
+      setShowAllJoined(true);
+      return;
+    }
+    router.push("/home");
+  };
+
+  useEffect(() => {
+    if (createdEvents.length <= 1 && showAllCreated) {
+      setShowAllCreated(false);
+    }
+  }, [createdEvents.length, showAllCreated]);
+
+  useEffect(() => {
+    if (joinedFromOthers.length <= 1 && showAllJoined) {
+      setShowAllJoined(false);
+    }
+  }, [joinedFromOthers.length, showAllJoined]);
 
   return (
     <GestureHandlerRootView style={styles.root}>
@@ -58,26 +152,71 @@ export default function MyEventsScreen() {
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.content}
         >
-          <Text style={styles.title}>Your Events</Text>
-          <Text style={styles.subtitle}>
-            Keep track of events you are hosting or attending.
-          </Text>
-          {hasEvents ? (
-            <View style={styles.list}>
-              {joinedEvents.map((event) => (
-                <JoinedEventRow
-                  key={event.id}
-                  event={event}
-                  onView={handleEventPress}
-                  onLeave={handleLeaveEvent}
-                />
-              ))}
-            </View>
-          ) : (
-            <Text style={styles.emptyState}>
-              Tap Joining on any event to add it to this list.
+          <View style={styles.header}>
+            <Text style={styles.title}>Your Events</Text>
+            <Text style={styles.subtitle}>
+              Everything you are organizing and attending lives here.
             </Text>
-          )}
+          </View>
+
+          <View style={styles.section}>
+            <SectionHeader
+              title="Created"
+              actionLabel={createdActionLabel}
+              onAction={createdActionLabel ? handleCreatedAction : undefined}
+            />
+            {createdEvents.length > 0 ? (
+              <View style={styles.cardList}>
+                {createdVisible.map((event) => (
+                  <View key={event.id} style={styles.cardWrapper}>
+                    <EventCard item={event} onPress={handleEventPress} />
+                  </View>
+                ))}
+                {!showAllCreated && createdEvents.length > 1 ? (
+                  <Text style={styles.moreHint}>
+                    {createdEvents.length - 1} more event
+                    {createdEvents.length - 1 > 1 ? "s" : ""} saved — tap See all
+                    to view.
+                  </Text>
+                ) : null}
+              </View>
+            ) : (
+              <Text style={styles.emptyState}>
+                Start hosting by creating your first event.
+              </Text>
+            )}
+          </View>
+
+          <View style={styles.section}>
+            <SectionHeader
+              title="Joined"
+              actionLabel={joinedActionLabel}
+              onAction={joinedActionLabel ? handleJoinedAction : undefined}
+            />
+            {joinedFromOthers.length > 0 ? (
+              <View style={styles.cardList}>
+                {joinedVisible.map((event) => (
+                  <JoinedEventRow
+                    key={event.id}
+                    event={event}
+                    onView={handleEventPress}
+                    onLeave={handleLeaveEvent}
+                  />
+                ))}
+                {!showAllJoined && joinedFromOthers.length > 1 ? (
+                  <Text style={styles.moreHint}>
+                    {joinedFromOthers.length - 1} more event
+                    {joinedFromOthers.length - 1 > 1 ? "s" : ""} waiting — tap
+                    See all to view.
+                  </Text>
+                ) : null}
+              </View>
+            ) : (
+              <Text style={styles.emptyState}>
+                Browse events and tap Joining to save them here.
+              </Text>
+            )}
+          </View>
         </ScrollView>
       </LinearGradient>
     </GestureHandlerRootView>
@@ -99,16 +238,12 @@ const JoinedEventRow = ({ event, onView, onLeave }: JoinedEventRowProps) => {
 
   const handleConfirmRemove = useCallback(() => {
     Alert.alert(
-      "ลบอีเวนต์?",
-      "แน่ใจหรือไม่ว่าต้องการนำอีเวนต์นี้ออกจาก My Events",
+      "Remove event?",
+      "Leaving will remove this event from your list.",
       [
+        { text: "Cancel", style: "cancel", onPress: closeSwipeable },
         {
-          text: "ยกเลิก",
-          style: "cancel",
-          onPress: closeSwipeable,
-        },
-        {
-          text: "ลบ",
+          text: "Remove",
           style: "destructive",
           onPress: () => {
             onLeave(event.id);
@@ -124,7 +259,7 @@ const JoinedEventRow = ({ event, onView, onLeave }: JoinedEventRowProps) => {
       <View style={styles.deleteActionContainer}>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={`Delete ${event.title}`}
+          accessibilityLabel={`Remove ${event.title}`}
           onPress={handleConfirmRemove}
           style={({ pressed }) => [
             styles.deleteAction,
@@ -132,7 +267,7 @@ const JoinedEventRow = ({ event, onView, onLeave }: JoinedEventRowProps) => {
           ]}
         >
           <Ionicons name="trash-outline" size={22} color="#FFFFFF" />
-          <Text style={styles.deleteText}>Delete</Text>
+          <Text style={styles.deleteText}>Remove</Text>
         </Pressable>
       </View>
     ),
@@ -162,8 +297,11 @@ const styles = StyleSheet.create({
   content: {
     paddingHorizontal: 24,
     paddingTop: 60,
-    paddingBottom: 120,
-    gap: 28,
+    paddingBottom: 140,
+    gap: 32,
+  },
+  header: {
+    gap: 12,
   },
   title: {
     color: "#FFFFFF",
@@ -175,12 +313,38 @@ const styles = StyleSheet.create({
     fontSize: 16,
     width: "85%",
   },
-  list: {
-    gap: 24,
+  section: {
+    gap: 18,
+  },
+  sectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  sectionTitle: {
+    color: "#FFFFFF",
+    fontSize: 22,
+    fontWeight: "600",
+  },
+  sectionAction: {
+    color: "rgba(255,255,255,0.8)",
+    fontSize: 15,
+    textDecorationLine: "underline",
+  },
+  sectionActionSpacer: {
+    width: 80,
+    height: 20,
+  },
+  cardList: {
+    gap: 20,
   },
   cardWrapper: {
     borderRadius: 24,
     overflow: "hidden",
+  },
+  emptyState: {
+    color: "rgba(255,255,255,0.65)",
+    fontSize: 16,
   },
   deleteActionContainer: {
     justifyContent: "center",
@@ -206,8 +370,9 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     letterSpacing: 0.5,
   },
-  emptyState: {
-    color: "rgba(255,255,255,0.65)",
-    fontSize: 16,
+  moreHint: {
+    color: "rgba(255,255,255,0.6)",
+    fontSize: 14,
+    marginTop: 4,
   },
 });

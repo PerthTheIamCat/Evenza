@@ -16,8 +16,23 @@ import { EventCard } from "@/components/EventCard";
 import { Text } from "@/components/Themed";
 import { useColorScheme } from "@/components/useColorScheme";
 import { useEvents } from "@/context/EventsContext";
+import type { EventItem } from "@/constants/events";
 
 const { width } = Dimensions.get("window");
+
+const getEventTimestamp = (event: EventItem): number => {
+  if (event.startDateTime) {
+    const start = Date.parse(event.startDateTime);
+    if (!Number.isNaN(start)) {
+      return start;
+    }
+  }
+  const fallback = Date.parse(event.date);
+  if (!Number.isNaN(fallback)) {
+    return fallback;
+  }
+  return Number.MAX_SAFE_INTEGER;
+};
 
 export default function HomeScreen() {
   const colorScheme = useColorScheme();
@@ -42,16 +57,39 @@ export default function HomeScreen() {
     );
   }, [events, featuredEvent]);
 
-  const upcomingEvents = useMemo(
-    () =>
-      events.filter((event) => {
-        if (featuredEvent && event.id === featuredEvent.id) {
-          return false;
+  const upcomingEvents = useMemo(() => {
+    const filtered = events.filter((event) => {
+      if (featuredEvent && event.id === featuredEvent.id) {
+        return false;
+      }
+      return !event.isFeatured;
+    });
+    const now = Date.now();
+    return filtered
+      .map((event) => ({
+        event,
+        timestamp: getEventTimestamp(event),
+      }))
+      .sort((a, b) => {
+        const deltaA = a.timestamp - now;
+        const deltaB = b.timestamp - now;
+
+        const isFutureA = deltaA >= 0 && Number.isFinite(deltaA);
+        const isFutureB = deltaB >= 0 && Number.isFinite(deltaB);
+
+        if (isFutureA && isFutureB) {
+          return deltaA - deltaB;
         }
-        return !event.isFeatured;
-      }),
-    [events, featuredEvent]
-  );
+        if (isFutureA) {
+          return -1;
+        }
+        if (isFutureB) {
+          return 1;
+        }
+        return deltaB - deltaA;
+      })
+      .map((item) => item.event);
+  }, [events, featuredEvent]);
 
   return (
     <LinearGradient

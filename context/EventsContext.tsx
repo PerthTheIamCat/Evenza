@@ -108,6 +108,7 @@ const mapDocToEvent = (
     title: data.title ?? "Untitled event",
     headline: data.headline ?? buildHeadline(data.description ?? ""),
     category: data.category ?? "General",
+    createdBy: data.createdBy ?? undefined,
     date: data.date ?? formattedStartDate,
     time: data.time ?? formattedStartTime,
     location:
@@ -232,6 +233,7 @@ export function EventsProvider({ children }: { children: ReactNode }) {
           title: input.title,
           headline,
           category: "General",
+          createdBy: activeUser.uid,
           date: formattedDate,
           time: formattedTime,
           location: locationLabel,
