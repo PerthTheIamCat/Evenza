@@ -7,10 +7,11 @@ import {
   VectorIcon,
 } from "expo-router/unstable-native-tabs";
 
-import { events } from "@/constants/events";
+import { useJoinedEvents } from "@/context/JoinedEventsContext";
 
 export default function TabLayout() {
-  const attendingCount = events.slice(0, 3).length;
+  const { joinedEvents } = useJoinedEvents();
+  const attendingCount = joinedEvents.length;
 
   return (
     <NativeTabs minimizeBehavior="onScrollDown">

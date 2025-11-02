@@ -1,21 +1,34 @@
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import { Image, Pressable, ScrollView, StyleSheet, View } from "react-native";
 
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useLocalSearchParams, useRouter } from "expo-router";
 
-import { SquareActionButton } from "@/components/CustomButton";
 import { Text } from "@/components/Themed";
 import { useColorScheme } from "@/components/useColorScheme";
-import { events } from "@/constants/events";
+import { useJoinedEvents } from "@/context/JoinedEventsContext";
+import { useEvents } from "@/context/EventsContext";
 
 export default function EventDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const colorScheme = useColorScheme();
+  const { events } = useEvents();
+  const { joinEvent, isJoined } = useJoinedEvents();
 
-  const event = useMemo(() => events.find((item) => item.id === id), [id]);
+  const event = useMemo(
+    () => events.find((item) => item.id === id),
+    [events, id],
+  );
+
+  const alreadyJoined = event ? isJoined(event.id) : false;
+
+  const handleJoin = useCallback(() => {
+    if (event && !alreadyJoined) {
+      joinEvent(event);
+    }
+  }, [alreadyJoined, event, joinEvent]);
 
   if (!event) {
     return null;
@@ -97,16 +110,25 @@ export default function EventDetailScreen() {
       </ScrollView>
 
       <View style={styles.footer}>
-        <View>
-          <Text style={styles.footerLabel}>Ticket starts from</Text>
-          <Text style={styles.footerPrice}>฿1,490</Text>
-        </View>
-        <SquareActionButton
-          onPress={() => {}}
-          state="active"
-          iconSize={34}
-          accessibilityLabel="Join this event"
-        />
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={
+            alreadyJoined
+              ? "Event already added to My Events"
+              : "Join this event"
+          }
+          onPress={handleJoin}
+          disabled={alreadyJoined}
+          style={({ pressed }) => [
+            styles.joinButton,
+            alreadyJoined && styles.joinButtonDisabled,
+            pressed && !alreadyJoined ? styles.joinButtonPressed : null,
+          ]}
+        >
+          <Text style={styles.joinButtonText}>
+            {alreadyJoined ? "Added to My Events" : "Joining"}
+          </Text>
+        </Pressable>
       </View>
     </LinearGradient>
   );
@@ -208,21 +230,26 @@ const styles = StyleSheet.create({
     bottom: 100,
     left: 24,
     right: 24,
-    height: 88,
     borderRadius: 28,
     backgroundColor: "rgba(12, 16, 46, 0.9)",
-    paddingHorizontal: 24,
-    flexDirection: "row",
+    padding: 24,
+  },
+  joinButton: {
+    height: 56,
+    borderRadius: 20,
     alignItems: "center",
-    justifyContent: "space-between",
+    justifyContent: "center",
+    backgroundColor: "rgba(124, 44, 220, 0.4)",
   },
-  footerLabel: {
-    color: "rgba(255,255,255,0.7)",
-    fontSize: 14,
+  joinButtonDisabled: {
+    backgroundColor: "rgba(255,255,255,0.18)",
   },
-  footerPrice: {
+  joinButtonPressed: {
+    transform: [{ scale: 0.96 }],
+  },
+  joinButtonText: {
     color: "#FFFFFF",
-    fontSize: 24,
+    fontSize: 18,
     fontWeight: "600",
   },
 });

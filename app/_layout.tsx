@@ -11,6 +11,8 @@ import { useEffect } from "react";
 import "react-native-reanimated";
 
 import { useColorScheme } from "@/components/useColorScheme";
+import { JoinedEventsProvider } from "@/context/JoinedEventsContext";
+import { EventsProvider } from "@/context/EventsContext";
 
 export {
   // Catch any errors thrown by the Layout component.
@@ -54,13 +56,22 @@ function RootLayoutNav() {
   const colorScheme = useColorScheme();
 
   return (
-    <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>
-      <Stack>
-        <Stack.Screen name="index" options={{ headerShown: false }} />
-        <Stack.Screen name="signIn" options={{ headerShown: false }} />
-        <Stack.Screen name="verification" options={{ headerShown: false }} />
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      </Stack>
-    </ThemeProvider>
+    <EventsProvider>
+      <JoinedEventsProvider>
+        <ThemeProvider
+          value={colorScheme === "dark" ? DarkTheme : DefaultTheme}
+        >
+          <Stack>
+            <Stack.Screen name="index" options={{ headerShown: false }} />
+            <Stack.Screen name="signIn" options={{ headerShown: false }} />
+            <Stack.Screen
+              name="verification"
+              options={{ headerShown: false }}
+            />
+            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          </Stack>
+        </ThemeProvider>
+      </JoinedEventsProvider>
+    </EventsProvider>
   );
 }

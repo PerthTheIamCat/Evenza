@@ -15,27 +15,44 @@ import { SquareActionButton } from "@/components/CustomButton";
 import { EventCard } from "@/components/EventCard";
 import { Text } from "@/components/Themed";
 import { useColorScheme } from "@/components/useColorScheme";
-import { events, featuredEvent } from "@/constants/events";
+import { useEvents } from "@/context/EventsContext";
+import { useJoinedEvents } from "@/context/JoinedEventsContext";
 
 const { width } = Dimensions.get("window");
 
 export default function HomeScreen() {
   const colorScheme = useColorScheme();
   const router = useRouter();
+  const { events } = useEvents();
+  const { joinEvent, isJoined } = useJoinedEvents();
 
   const gradient =
     colorScheme === "dark"
       ? (["#0A144A", "#1B2C8D", "#320045"] as const)
       : (["#162E7A", "#2343A0", "#4A0A7D"] as const);
 
-  const popularEvents = useMemo(
-    () => events.filter((event) => event.isPopular),
-    []
-  );
+  const featuredEvent = useMemo(() => {
+    if (events.length === 0) {
+      return undefined;
+    }
+    return events.find((event) => event.isFeatured) ?? events[0];
+  }, [events]);
+
+  const popularEvents = useMemo(() => {
+    return events.filter(
+      (event) => event.isPopular && event.id !== featuredEvent?.id
+    );
+  }, [events, featuredEvent]);
 
   const upcomingEvents = useMemo(
-    () => events.filter((event) => !event.isFeatured),
-    []
+    () =>
+      events.filter((event) => {
+        if (featuredEvent && event.id === featuredEvent.id) {
+          return false;
+        }
+        return !event.isFeatured;
+      }),
+    [events, featuredEvent]
   );
 
   return (
@@ -121,14 +138,41 @@ export default function HomeScreen() {
         </View>
 
         <View style={styles.upcomingList}>
-          {upcomingEvents.map((event) => (
-            <EventCard
-              key={event.id}
-              item={event}
-              variant="default"
-              onPress={(item) => router.push(`/home/event/${item.id}`)}
-            />
-          ))}
+          {upcomingEvents.map((event) => {
+            const alreadyJoined = isJoined(event.id);
+            return (
+              <View key={event.id} style={styles.upcomingItem}>
+                <EventCard
+                  item={event}
+                  variant="default"
+                  onPress={(item) => router.push(`/home/event/${item.id}`)}
+                />
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    alreadyJoined
+                      ? "Event already in My Events"
+                      : "Join this event"
+                  }
+                  onPress={() => {
+                    if (!alreadyJoined) {
+                      joinEvent(event);
+                    }
+                  }}
+                  disabled={alreadyJoined}
+                  style={({ pressed }) => [
+                    styles.joiningButton,
+                    alreadyJoined && styles.joiningButtonDisabled,
+                    pressed && !alreadyJoined ? styles.joiningButtonPressed : null,
+                  ]}
+                >
+                  <Text style={styles.joiningButtonText}>
+                    {alreadyJoined ? "Added to My Events" : "Joining"}
+                  </Text>
+                </Pressable>
+              </View>
+            );
+          })}
         </View>
       </ScrollView>
     </LinearGradient>
@@ -224,5 +268,26 @@ const styles = StyleSheet.create({
   },
   upcomingList: {
     gap: 20,
+  },
+  upcomingItem: {
+    gap: 12,
+  },
+  joiningButton: {
+    height: 48,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(124, 44, 220, 0.4)",
+  },
+  joiningButtonDisabled: {
+    backgroundColor: "rgba(255,255,255,0.18)",
+  },
+  joiningButtonPressed: {
+    transform: [{ scale: 0.97 }],
+  },
+  joiningButtonText: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "600",
   },
 });

@@ -1,4 +1,4 @@
-export type EventCategory = "Music" | "Tech" | "Art" | "Workshop";
+export type EventCategory = "Music" | "Tech" | "Art" | "Workshop" | "General";
 
 export type EventItem = {
   id: string;
@@ -13,6 +13,9 @@ export type EventItem = {
   image: string;
   isFeatured?: boolean;
   isPopular?: boolean;
+  startDateTime?: string;
+  endDateTime?: string;
+  source?: "static" | "user";
 };
 
 export const events: EventItem[] = [
