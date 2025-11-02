@@ -171,31 +171,62 @@ export default function CreateEventScreen() {
     setIosPickerState(null);
   }, [iosPickerState, iosPickerValue, setDatePart, setTimePart]);
 
-  const handleSelectImage = useCallback(async () => {
-    const permissionResult =
+  const ensureMediaLibraryPermission = useCallback(async () => {
+    const currentPermission =
+      await ImagePicker.getMediaLibraryPermissionsAsync();
+
+    if (
+      currentPermission.granted ||
+      currentPermission.status === "granted" ||
+      currentPermission.accessPrivileges === "limited"
+    ) {
+      return true;
+    }
+
+    const requestedPermission =
       await ImagePicker.requestMediaLibraryPermissionsAsync();
 
-    if (!permissionResult.granted) {
-      Alert.alert(
-        "Permission required",
-        "Please allow Evenza to access your photos to upload a cover image.",
-      );
+    if (
+      requestedPermission.granted ||
+      requestedPermission.status === "granted" ||
+      requestedPermission.accessPrivileges === "limited"
+    ) {
+      return true;
+    }
+
+    Alert.alert(
+      "Permission required",
+      Platform.OS === "ios"
+        ? "Allow Evenza to access your photo library from Settings > Privacy."
+        : "Allow Evenza to access your photos in Settings before picking a cover image.",
+    );
+    return false;
+  }, []);
+
+  const handleSelectImage = useCallback(async () => {
+    const hasPermission = await ensureMediaLibraryPermission();
+    if (!hasPermission) {
       return;
     }
 
-    const imageMediaType = "images" as unknown as ImagePicker.MediaTypeOptions;
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        allowsEditing: true,
+        quality: 0.8,
+        aspect: [4, 3],
+      });
 
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: imageMediaType,
-      allowsEditing: true,
-      quality: 0.8,
-      aspect: [4, 3],
-    });
-
-    if (!result.canceled && result.assets.length > 0) {
-      setImageUri(result.assets[0].uri);
+      if (!result.canceled && result.assets?.length > 0) {
+        setImageUri(result.assets[0].uri);
+      }
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "We couldn't open your gallery. Please try again.";
+      Alert.alert("Image picker failed", message);
     }
-  }, []);
+  }, [ensureMediaLibraryPermission]);
 
   const isDateRangeValid = useMemo(() => {
     if (!form.startDateTime || !form.endDateTime) {
